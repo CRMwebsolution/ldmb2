@@ -53,7 +53,7 @@ export function Footer() {
                 ["Track Info", "/track"],
                 ["Photo Gallery", "/gallery"],
                 ["Race Results", "/race-results"],
-                ["Class Records", "/records"],
+                ["Class Records", "/race-results/records"],
                 ["Track Sponsors", "/sponsors"],
                 ["Contact & Directions", "/contact"],
                 ["Admin Portal", "/admin"],

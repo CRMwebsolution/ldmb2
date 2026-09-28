@@ -14,7 +14,6 @@ const links = [
   { href: "/track", label: "Track" },
   { href: "/gallery", label: "Gallery" },
   { href: "/race-results", label: "Results" },
-  { href: "/records", label: "Records" },
   { href: "/sponsors", label: "Sponsors" },
   { href: "/contact", label: "Contact" },
 ];
