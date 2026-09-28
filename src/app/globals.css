@@ -119,6 +119,24 @@ body {
   z-index: 1;
 }
 
+/* Keep the original race photo gently moving without shifting page layout. */
+.hero-photo-motion {
+  animation: hero-photo-push 22s ease-in-out infinite alternate;
+  transform-origin: 48% 50%;
+}
+
+@keyframes hero-photo-push {
+  from { transform: scale(1.01); }
+  to { transform: scale(1.09); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-photo-motion,
+  .hero-mud-particle {
+    animation: none !important;
+  }
+}
+
 /* ── Mud particle animation ──────────────────────────────────────────────── */
 @keyframes mudDrop {
   0% { transform: translateY(-20px) scale(0); opacity: 0; }
