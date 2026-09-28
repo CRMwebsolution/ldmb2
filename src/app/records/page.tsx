@@ -86,7 +86,7 @@ export default function RecordsPage() {
         <div>
           <span className="text-xs font-bold uppercase tracking-widest" style={{ color: "var(--primary)" }}>Track history</span>
           <h1 className="text-4xl sm:text-5xl font-black mt-2">Class Records</h1>
-          <p className="mt-2" style={{ color: "var(--muted-fg)" }}>The fastest recorded timed pass in each class, by year or all time.</p>
+          <p className="mt-2" style={{ color: "var(--muted-fg)" }}>Fastest passes and smallest differences between two passes, by class and year.</p>
         </div>
         <button type="button" onClick={() => { setRefreshing(true); setRevision((current) => current + 1); }}
           disabled={refreshing} className="inline-flex items-center gap-2 text-sm font-semibold px-4 py-2 rounded-lg border disabled:opacity-50"
@@ -98,7 +98,7 @@ export default function RecordsPage() {
       <div className="rounded-2xl border-l-4 p-5 mb-9" style={{ borderColor: "var(--primary)", background: "var(--muted)" }}>
         <p className="font-bold">Unofficial records</p>
         <p className="text-sm leading-relaxed mt-1" style={{ color: "var(--muted-fg)" }}>
-          These times may be incomplete or inaccurate and are not guaranteed to be 100% accurate. They include only times entered since the website tracking system began. Earlier races and unrecorded passes are not included. Distances and disqualifications do not count as timed records.
+          These times may be incomplete or inaccurate and are not guaranteed to be 100% accurate. They include only times entered since the website tracking system began. Earlier races and unrecorded passes are not included. Distances and disqualifications do not count as timed records. Consistency records require two valid timed passes; the smallest difference wins.
         </p>
       </div>
 
@@ -115,7 +115,7 @@ export default function RecordsPage() {
           ))}
         </nav>
         <p className="text-sm mb-6" style={{ color: "var(--muted-fg)" }}>
-          {timedClasses} of {classes.length} classes have a recorded time for {year ?? "all time"}. Showing each racer’s best timed pass per race entry. Updates automatically while this page is open.
+          {timedClasses} of {classes.length} class categories have a qualifying record for {year ?? "all time"}. Best pass classes use each entry’s fastest time; consistency classes use the difference between both timed passes. Updates automatically while this page is open.
         </p>
         {classes.length === 0 ? <p>No classes have been published for this period yet.</p> : (
           <div className="grid gap-5 lg:grid-cols-2">
@@ -123,27 +123,28 @@ export default function RecordsPage() {
               const best = cls.entries[0];
               return <section key={cls.key} className="rounded-2xl border p-5 sm:p-6" style={{ borderColor: "var(--border)", background: "var(--surface)" }}>
                 <h2 className="font-black text-xl flex gap-2 items-center"><Trophy className="w-5 h-5 shrink-0" style={{ color: "var(--primary)" }} />{cls.name}</h2>
+                <p className="text-xs font-semibold uppercase tracking-wide mt-2" style={{ color: "var(--muted-fg)" }}>{cls.kind === "consistency" ? "Smallest two-pass difference" : "Fastest pass"}</p>
                 {best ? <>
                   <div className="mt-5 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                    <strong className="text-4xl font-black tabular-nums" style={{ color: "var(--primary)" }}>{best.seconds.toFixed(3)}<span className="text-base ml-1">sec</span></strong>
+                    <strong className="text-4xl font-black tabular-nums" style={{ color: "var(--primary)" }}>{best.seconds.toFixed(3)}<span className="text-base ml-1">sec{cls.kind === "consistency" ? " difference" : ""}</span></strong>
                     <span className="font-semibold">{best.racerName}</span>
                   </div>
                   <Link className="inline-flex items-center gap-1 text-sm mt-2 hover:underline" style={{ color: "var(--muted-fg)" }} href={`/race-results/${best.raceSlug || best.raceId}`}>
                     {best.raceName} · {formatRaceDate(best.raceDate)} <ArrowUpRight className="w-4 h-4" />
                   </Link>
                   {cls.entries.length > 1 && <details className="mt-5 border-t pt-4" style={{ borderColor: "var(--border)" }}>
-                    <summary className="cursor-pointer text-sm font-semibold">See top {Math.min(10, cls.entries.length)} recorded entries</summary>
+                    <summary className="cursor-pointer text-sm font-semibold">See top {Math.min(10, cls.entries.length)} {cls.kind === "consistency" ? "differences" : "recorded entries"}</summary>
                     <ol className="mt-4 space-y-3">
                       {cls.entries.slice(0, 10).map((entry, index) => <li key={entry.resultId} className="grid grid-cols-[2rem_1fr_auto] gap-2 text-sm items-start">
                         <span style={{ color: "var(--muted-fg)" }}>{index + 1}.</span>
                         <span><span className="font-semibold">{entry.racerName}</span><br />
                           <Link className="hover:underline text-xs" style={{ color: "var(--muted-fg)" }} href={`/race-results/${entry.raceSlug || entry.raceId}`}>{entry.raceName} · {formatRaceDate(entry.raceDate)}</Link>
                         </span>
-                        <span className="font-bold tabular-nums">{entry.seconds.toFixed(3)}s</span>
+                        <span className="font-bold tabular-nums">{entry.seconds.toFixed(3)}s{cls.kind === "consistency" ? " diff." : ""}</span>
                       </li>)}
                     </ol>
                   </details>}
-                </> : <p className="mt-5 flex items-center gap-2 text-sm" style={{ color: "var(--muted-fg)" }}><Clock3 className="w-4 h-4" /> No timed pass recorded for this class in this period.</p>}
+                </> : <p className="mt-5 flex items-center gap-2 text-sm" style={{ color: "var(--muted-fg)" }}><Clock3 className="w-4 h-4" /> {cls.kind === "consistency" ? "No pair of timed passes" : "No timed pass"} recorded for this class in this period.</p>}
               </section>;
             })}
           </div>

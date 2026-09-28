@@ -6,7 +6,7 @@ import {
 } from "../src/lib/race-results.ts";
 import { raceStartIso, todayAtTrack } from "../src/lib/race-schedule.ts";
 import { buildRaceSavePayload, prepareRaceEditor } from "../src/lib/race-editor.ts";
-import { bestTimedPass, buildRaceRecords } from "../src/lib/race-records.ts";
+import { bestTimedPass, buildRaceRecords, timedPassDifference } from "../src/lib/race-records.ts";
 
 test("completed timed runs beat distances, with the lower time winning", () => {
   assert.equal(compareBestPass("9.900", "200ft"), -1);
@@ -89,6 +89,15 @@ test("records use the fastest timed pass, never a distance, DQ, zero, or stale f
   assert.equal(bestTimedPass({ first_half: "125ft", second_half: "8.9" }), 8.9);
 });
 
+test("consistency records use the smallest rounded two-pass difference, including exact ties", () => {
+  assert.equal(timedPassDifference({ first_half: "9.082", second_half: "9.019" }), 0.063);
+  assert.equal(timedPassDifference({ first_half: "9.0", second_half: "9.0" }), 0);
+  assert.equal(timedPassDifference({ first_half: "9.0", second_half: "" }), null);
+  assert.equal(timedPassDifference({ first_half: "9.0", second_half: "125ft" }), null);
+  assert.equal(timedPassDifference({ first_half: "0", second_half: "9.0" }), null);
+  assert.equal(timedPassDifference({ first_half: "9.0", second_half: "DQ" }), null);
+});
+
 test("records combine whitespace variants and separate years without exposing unpublished races", () => {
   const races = [
     { id: "old", date: "2025-09-20", name: "September 2025", slug: "sep-25", published: true },
@@ -96,8 +105,8 @@ test("records combine whitespace variants and separate years without exposing un
     { id: "draft", date: "2026-06-16", name: "Draft", slug: "draft", published: false },
   ];
   const classes = [
-    { id: "old-c", race_id: "old", name: "Consistency " },
-    { id: "new-c", race_id: "new", name: "Consistency" },
+    { id: "old-c", race_id: "old", name: "Unlimited " },
+    { id: "new-c", race_id: "new", name: "Unlimited" },
     { id: "empty-c", race_id: "new", name: "Modified" },
     { id: "draft-c", race_id: "draft", name: "Unlimited" },
   ];
@@ -108,11 +117,35 @@ test("records combine whitespace variants and separate years without exposing un
     { id: "draft-r", class_id: "draft-c", name: "D", first_half: "2.0", second_half: null },
   ];
   const allTime = buildRaceRecords(races, classes, results, null);
-  assert.deepEqual(allTime.map((cls) => cls.name), ["Consistency", "Modified"]);
-  assert.deepEqual(allTime[0].entries.map((entry) => entry.seconds), [6.9, 7.1]);
-  assert.deepEqual(allTime[1].entries, []);
+  assert.deepEqual(allTime.map((cls) => cls.name), ["Modified", "Unlimited"]);
+  assert.deepEqual(allTime[1].entries.map((entry) => entry.seconds), [6.9, 7.1]);
+  assert.deepEqual(allTime[0].entries, []);
   const oldYear = buildRaceRecords(races, classes, results, 2025);
-  assert.deepEqual(oldYear.map((cls) => [cls.name, cls.entries[0]?.seconds]), [["Consistency", 7.1]]);
+  assert.deepEqual(oldYear.map((cls) => [cls.name, cls.entries[0]?.seconds]), [["Unlimited", 7.1]]);
   const newYear = buildRaceRecords(races, classes, results, 2026);
-  assert.deepEqual(newYear.map((cls) => [cls.name, cls.entries.length]), [["Consistency", 1], ["Modified", 0]]);
+  assert.deepEqual(newYear.map((cls) => [cls.name, cls.entries.length]), [["Modified", 0], ["Unlimited", 1]]);
+});
+
+test("named consistency classes override legacy both mode and rank by difference", () => {
+  const races = [{ id: "race", date: "2026-09-18", name: "September", slug: "9-18-26", published: true }];
+  const classes = [
+    { id: "consistency", race_id: "race", name: "Consistency ", display_mode: "both" },
+    { id: "powder", race_id: "race", name: "Powder Puff", display_mode: "consistency" },
+    { id: "invite", race_id: "race", name: "Invitation Class", display_mode: "consistency" },
+    { id: "foot", race_id: "race", name: "Foot Runners", display_mode: "consistency" },
+    { id: "fast", race_id: "race", name: "Unlimited", display_mode: "fastest" },
+  ];
+  const results = classes.flatMap((cls) => [
+    { id: `${cls.id}-quick`, class_id: cls.id, name: "Quick", first_half: "5.000", second_half: "7.000", consistency: 0.001 },
+    { id: `${cls.id}-close`, class_id: cls.id, name: "Close", first_half: "7.100", second_half: "7.110", consistency: 9.999 },
+    { id: `${cls.id}-single`, class_id: cls.id, name: "Single", first_half: "4.900", second_half: "DQ", consistency: 0 },
+  ]);
+  const records = buildRaceRecords(races, classes, results, null);
+  for (const cls of records.filter((group) => group.kind === "consistency")) {
+    assert.equal(cls.entries[0].racerName, "Close");
+    assert.equal(cls.entries[0].seconds, 0.01);
+    assert.deepEqual(cls.entries.map((entry) => entry.racerName), ["Close", "Quick"]);
+  }
+  assert.equal(records.filter((group) => group.kind === "consistency").length, 4);
+  assert.equal(records.find((group) => group.name === "Unlimited").entries[0].racerName, "Single");
 });
