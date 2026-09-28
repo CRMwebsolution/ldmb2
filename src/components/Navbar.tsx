@@ -14,6 +14,7 @@ const links = [
   { href: "/track", label: "Track" },
   { href: "/gallery", label: "Gallery" },
   { href: "/race-results", label: "Results" },
+  { href: "/records", label: "Records" },
   { href: "/sponsors", label: "Sponsors" },
   { href: "/contact", label: "Contact" },
 ];
@@ -42,7 +43,7 @@ export function Navbar() {
                 LITTLE DOO
               </span>
               <span
-                className="text-xs font-semibold uppercase tracking-widest hidden sm:block"
+                className="text-xs font-semibold uppercase tracking-widest hidden xl:block"
                 style={{ color: "var(--muted-fg)" }}
               >
                 Mud Bog
@@ -50,7 +51,7 @@ export function Navbar() {
             </Link>
 
             {/* Desktop nav */}
-            <nav className="hidden md:flex items-center gap-1">
+            <nav className="hidden lg:flex items-center gap-1">
               {links.map((link) => {
                 const isActive =
                   link.href === "/"
@@ -60,7 +61,7 @@ export function Navbar() {
                   <Link
                     key={link.href}
                     href={link.href}
-                    className="relative px-3 py-1.5 text-sm font-medium rounded-md transition-colors"
+                    className="relative px-2 py-1.5 text-sm font-medium rounded-md transition-colors"
                     style={{
                       color: isActive ? "var(--primary)" : "var(--muted-fg)",
                     }}
@@ -84,7 +85,7 @@ export function Navbar() {
               <ThemeToggle />
               <Link
                 href="/events"
-                className="hidden md:inline-flex items-center px-4 py-2 text-sm font-semibold rounded-lg transition-colors"
+                className="hidden xl:inline-flex items-center px-4 py-2 text-sm font-semibold rounded-lg transition-colors"
                 style={{
                   background: "var(--primary)",
                   color: "var(--primary-fg)",
@@ -94,7 +95,7 @@ export function Navbar() {
               </Link>
               {/* Mobile menu button */}
               <button
-                className="md:hidden w-9 h-9 flex items-center justify-center rounded-full"
+                className="lg:hidden w-9 h-9 flex items-center justify-center rounded-full"
                 style={{ background: "var(--muted)", color: "var(--muted-fg)" }}
                 onClick={() => setOpen(!open)}
                 aria-label="Toggle menu"
@@ -114,7 +115,7 @@ export function Navbar() {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }}
             transition={{ duration: 0.2 }}
-            className="fixed top-16 left-0 right-0 z-40 md:hidden border-b"
+            className="fixed top-16 left-0 right-0 z-40 lg:hidden border-b"
             style={{ background: "var(--surface)", borderColor: "var(--border)" }}
           >
             <nav className="max-w-7xl mx-auto px-4 py-4 flex flex-col gap-1">

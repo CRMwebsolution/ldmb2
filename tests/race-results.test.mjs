@@ -6,6 +6,7 @@ import {
 } from "../src/lib/race-results.ts";
 import { raceStartIso, todayAtTrack } from "../src/lib/race-schedule.ts";
 import { buildRaceSavePayload, prepareRaceEditor } from "../src/lib/race-editor.ts";
+import { bestTimedPass, buildRaceRecords } from "../src/lib/race-records.ts";
 
 test("completed timed runs beat distances, with the lower time winning", () => {
   assert.equal(compareBestPass("9.900", "200ft"), -1);
@@ -79,4 +80,39 @@ test("event day and four o'clock start follow the track timezone across DST", ()
   assert.equal(todayAtTrack(new Date("2026-10-01T02:00:00Z")), "2026-09-30");
   assert.equal(raceStartIso("2026-10-17"), "2026-10-17T20:00:00.000Z");
   assert.equal(raceStartIso("2026-12-12"), "2026-12-12T21:00:00.000Z");
+});
+
+test("records use the fastest timed pass, never a distance, DQ, zero, or stale fastest field", () => {
+  assert.equal(bestTimedPass({ first_half: "9.082", second_half: "9.019" }), 9.019);
+  assert.equal(bestTimedPass({ first_half: "0", second_half: "-1" }), null);
+  assert.equal(bestTimedPass({ first_half: "125ft", second_half: "DQ" }), null);
+  assert.equal(bestTimedPass({ first_half: "125ft", second_half: "8.9" }), 8.9);
+});
+
+test("records combine whitespace variants and separate years without exposing unpublished races", () => {
+  const races = [
+    { id: "old", date: "2025-09-20", name: "September 2025", slug: "sep-25", published: true },
+    { id: "new", date: "2026-05-16", name: "May 2026", slug: "may-26", published: true },
+    { id: "draft", date: "2026-06-16", name: "Draft", slug: "draft", published: false },
+  ];
+  const classes = [
+    { id: "old-c", race_id: "old", name: "Consistency " },
+    { id: "new-c", race_id: "new", name: "Consistency" },
+    { id: "empty-c", race_id: "new", name: "Modified" },
+    { id: "draft-c", race_id: "draft", name: "Unlimited" },
+  ];
+  const results = [
+    { id: "old-r", class_id: "old-c", name: "A", first_half: "7.2", second_half: "7.1", fastest: "1.0" },
+    { id: "new-r", class_id: "new-c", name: "B", first_half: "6.9", second_half: "100ft", fastest: "100ft" },
+    { id: "empty-r", class_id: "empty-c", name: "C", first_half: "DQ", second_half: "-" },
+    { id: "draft-r", class_id: "draft-c", name: "D", first_half: "2.0", second_half: null },
+  ];
+  const allTime = buildRaceRecords(races, classes, results, null);
+  assert.deepEqual(allTime.map((cls) => cls.name), ["Consistency", "Modified"]);
+  assert.deepEqual(allTime[0].entries.map((entry) => entry.seconds), [6.9, 7.1]);
+  assert.deepEqual(allTime[1].entries, []);
+  const oldYear = buildRaceRecords(races, classes, results, 2025);
+  assert.deepEqual(oldYear.map((cls) => [cls.name, cls.entries[0]?.seconds]), [["Consistency", 7.1]]);
+  const newYear = buildRaceRecords(races, classes, results, 2026);
+  assert.deepEqual(newYear.map((cls) => [cls.name, cls.entries.length]), [["Consistency", 1], ["Modified", 0]]);
 });

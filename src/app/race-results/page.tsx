@@ -38,6 +38,7 @@ export default function RaceResultsIndex() {
         <span className="text-xs font-bold uppercase tracking-widest" style={{ color: "var(--primary)" }}>Official results</span>
         <h1 className="text-4xl sm:text-5xl font-black mt-2">Race Results</h1>
         <p className="mt-2" style={{ color: "var(--muted-fg)" }}>Choose a race to see its results by class.</p>
+        <Link href="/records" className="inline-flex items-center mt-4 font-semibold text-sm hover:underline" style={{ color: "var(--primary)" }}>See class records →</Link>
       </div>
       {loading ? <p>Loading races...</p> : error ? <p role="alert">{error}</p> : races.length === 0 ? <p>No results have been published yet.</p> : (
         <div className="space-y-8">
