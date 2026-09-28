@@ -12,6 +12,7 @@ const geist = Geist({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://littledoomudbog.com"),
   title: {
     default: "Little Doo Mud Bog — Newport, NC",
     template: "%s | Little Doo Mud Bog",
@@ -35,6 +36,21 @@ export const metadata: Metadata = {
     siteName: "Little Doo Mud Bog",
     locale: "en_US",
     type: "website",
+    images: [{
+      url: "/social-card.png",
+      width: 1200,
+      height: 630,
+      alt: "Little Doo Mud Bog race nights, schedule, and results in Newport, North Carolina",
+    }],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Little Doo Mud Bog",
+    description: "Family-friendly mud racing in Newport, North Carolina.",
+    images: [{
+      url: "/social-card.png",
+      alt: "Little Doo Mud Bog race nights, schedule, and results in Newport, North Carolina",
+    }],
   },
 };
 

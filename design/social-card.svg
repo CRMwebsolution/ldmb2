@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <linearGradient id="ground" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0c0a07"/>
+      <stop offset="0.56" stop-color="#1a0f00"/>
+      <stop offset="1" stop-color="#3d2008"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.67" cy="0.49" r="0.7">
+      <stop offset="0" stop-color="#a45208" stop-opacity="0.42"/>
+      <stop offset="1" stop-color="#a45208" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="tire" width="60" height="60" patternUnits="userSpaceOnUse" patternTransform="skewX(-14)">
+      <rect x="5" y="0" width="3" height="60" fill="#d97706" opacity="0.13"/>
+      <rect x="17" y="0" width="3" height="60" fill="#d97706" opacity="0.13"/>
+    </pattern>
+    <clipPath id="card">
+      <rect x="772" y="46" width="382" height="538" rx="27"/>
+    </clipPath>
+  </defs>
+
+  <rect width="1200" height="630" fill="url(#ground)"/>
+  <rect width="1200" height="630" fill="url(#glow)"/>
+  <rect x="575" width="630" height="630" fill="url(#tire)"/>
+  <path d="M0 0h1200v8H0z" fill="#d97706"/>
+  <path d="M0 622h1200v8H0z" fill="#d97706"/>
+
+  <rect x="58" y="65" width="12" height="12" rx="2" fill="#f59e0b"/>
+  <text x="86" y="77" fill="#e4d4bb" font-family="DejaVu Sans, sans-serif" font-size="20" font-weight="bold" letter-spacing="3">NEWPORT, NORTH CAROLINA</text>
+  <path d="M64 106h90" stroke="#d97706" stroke-width="6"/>
+
+  <text x="58" y="233" fill="#fffaf2" font-family="DejaVu Sans, sans-serif" font-size="90" font-weight="bold" letter-spacing="-5">LITTLE DOO</text>
+  <text x="58" y="346" fill="#f59e0b" font-family="DejaVu Sans, sans-serif" font-size="113" font-weight="bold" letter-spacing="-5">MUD BOG</text>
+  <path d="M64 395h633" stroke="#c2a67b" stroke-width="2" opacity="0.42"/>
+  <text x="64" y="445" fill="#fff8ec" font-family="DejaVu Sans, sans-serif" font-size="27" font-weight="bold" letter-spacing="1.7">RACE NIGHTS  ·  SCHEDULE  ·  RESULTS</text>
+  <text x="64" y="565" fill="#e4d4bb" font-family="DejaVu Sans, sans-serif" font-size="22" letter-spacing="1">littledoomudbog.com</text>
+
+  <rect x="764" y="38" width="398" height="554" rx="34" fill="#d97706" opacity="0.33"/>
+  <g clip-path="url(#card)">
+    <rect x="772" y="46" width="382" height="538" fill="#ffffff"/>
+    <image x="733" y="30" width="460" height="460" xlink:href="../public/ldmbfav.png"/>
+    <rect x="772" y="475" width="382" height="109" fill="#d97706"/>
+    <text x="963" y="518" text-anchor="middle" fill="#1c1105" font-family="DejaVu Sans, sans-serif" font-size="17" font-weight="bold" letter-spacing="2.8">FAMILY-OWNED MUD RACING</text>
+    <text x="963" y="554" text-anchor="middle" fill="#ffffff" font-family="DejaVu Sans, sans-serif" font-size="19" font-weight="bold" letter-spacing="1.2">COME WATCH THE MUD FLY</text>
+  </g>
+  <rect x="772" y="46" width="382" height="538" rx="27" fill="none" stroke="#f7b647" stroke-width="3" opacity="0.8"/>
+</svg>
