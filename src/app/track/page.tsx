@@ -5,13 +5,11 @@ import { AnimateIn } from "@/components/AnimateIn";
 export const metadata: Metadata = {
   title: "Track Info",
   description:
-    "Learn about the Little Doo Mud Bog track — 200-foot pit, 700-foot shutdown area, concessions, and more in Newport, NC.",
+    "Learn about the 200-foot Little Doo Mud Bog track and plan your visit to Newport, NC.",
 };
 
 const specs = [
   { icon: <Ruler className="w-5 h-5" />, label: "Pit Length", value: "200 feet" },
-  { icon: <Ruler className="w-5 h-5" />, label: "Pit Width", value: "45 feet" },
-  { icon: <Ruler className="w-5 h-5" />, label: "Shutdown Area", value: "700 feet" },
   { icon: <Clock className="w-5 h-5" />, label: "Gates Open", value: "2:00 PM" },
   { icon: <Clock className="w-5 h-5" />, label: "Racing Starts", value: "4:00 PM" },
   { icon: <MapPin className="w-5 h-5" />, label: "Location", value: "Newport, NC" },
@@ -19,7 +17,6 @@ const specs = [
 
 const amenities = [
   { icon: <Utensils className="w-4 h-4" />, label: "Concession Stand", desc: "Hot food and drinks available all day" },
-  { icon: <ShowerHead className="w-4 h-4" />, label: "Wash-Down Area", desc: "Clean your vehicle after the run" },
   { icon: <MapPin className="w-4 h-4" />, label: "Spectator Viewing", desc: "Plenty of room to bring chairs and grills" },
   { icon: <Phone className="w-4 h-4" />, label: "On-Site Staff", desc: "Friendly staff ready to help all day" },
 ];
@@ -106,9 +103,8 @@ export default function TrackPage() {
               community of mud enthusiasts up and down the East Coast.
             </p>
             <p>
-              Our 200-foot mud pit paired with a generous 700-foot shutdown
-              area provides a safe and thrilling experience for both drivers
-              and spectators. Whether you&apos;re slinging mud in a stock
+              The 200-foot mud track welcomes trucks, SUVs, and custom
+              machines. Whether you&apos;re running a stock
               truck or piloting a fully custom tube chassis build, there&apos;s
               a class for you here.
             </p>
@@ -187,7 +183,7 @@ export default function TrackPage() {
                     className="font-bold text-sm"
                     style={{ color: "var(--foreground)" }}
                   >
-                    759 Tom Mann Rd, Newport, NC 28570
+                    Across from 759 Tom Mann Rd, Newport, NC 28570
                   </p>
                   <p className="text-xs mt-0.5" style={{ color: "var(--muted-fg)" }}>
                     <a href="tel:+12523420865" className="hover:underline">

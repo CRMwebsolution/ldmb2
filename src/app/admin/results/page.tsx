@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
 import { Race, RaceClass, RaceResult } from "@/lib/supabase/types";
+import { computeRaceMetrics, formatPass, hasRecordedPass, isValidPassInput } from "@/lib/race-results";
 import {
   Trophy,
   Plus,
@@ -32,8 +33,6 @@ export default function AdminResultsPage() {
   const [newName, setNewName] = useState("");
   const [newPass1, setNewPass1] = useState("");
   const [newPass2, setNewPass2] = useState("");
-  const [newFastest, setNewFastest] = useState("");
-  const [newConsistency, setNewConsistency] = useState<string>("");
   const [savingPass, setSavingPass] = useState(false);
 
   // In-line editing state
@@ -42,14 +41,10 @@ export default function AdminResultsPage() {
     name: string;
     first_half: string;
     second_half: string;
-    fastest: string;
-    consistency: string;
   }>({
     name: "",
     first_half: "",
     second_half: "",
-    fastest: "",
-    consistency: "",
   });
 
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
@@ -138,52 +133,24 @@ export default function AdminResultsPage() {
     loadResults();
   }, [selectedClassId]);
 
-  // Helper to auto-calculate fastest time and consistency diff when user types pass 1 & 2
-  const autoCalculateTimes = (p1: string, p2: string) => {
-    const t1 = parseFloat(p1.trim());
-    const t2 = parseFloat(p2.trim());
-
-    if (!isNaN(t1) && !isNaN(t2)) {
-      const min = Math.min(t1, t2);
-      const diff = Math.abs(t1 - t2);
-      return {
-        fastest: min.toFixed(3),
-        consistency: diff.toFixed(3),
-      };
-    } else if (!isNaN(t1)) {
-      return { fastest: t1.toFixed(3), consistency: "" };
-    } else if (!isNaN(t2)) {
-      return { fastest: t2.toFixed(3), consistency: "" };
-    }
-    return { fastest: p1 || p2 || "", consistency: "" };
-  };
-
-  const handlePass1Change = (val: string) => {
-    setNewPass1(val);
-    const calc = autoCalculateTimes(val, newPass2);
-    if (calc.fastest) setNewFastest(calc.fastest);
-    if (calc.consistency) setNewConsistency(calc.consistency);
-  };
-
-  const handlePass2Change = (val: string) => {
-    setNewPass2(val);
-    const calc = autoCalculateTimes(newPass1, val);
-    if (calc.fastest) setNewFastest(calc.fastest);
-    if (calc.consistency) setNewConsistency(calc.consistency);
-  };
+  const newMetrics = computeRaceMetrics(newPass1, newPass2);
+  const editMetrics = computeRaceMetrics(editFormData.first_half, editFormData.second_half);
 
   // Add new contestant pass
   const handleAddPass = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedClassId || !newName.trim()) return;
+    if (![newPass1, newPass2].every(isValidPassInput)) {
+      setMessage({ type: "error", text: "Use a time, a distance with ft or ', or DQ for each pass." });
+      return;
+    }
 
     setSavingPass(true);
     setMessage(null);
 
     try {
       const nextOrder = (results.length > 0 ? Math.max(...results.map((r) => r.order_num || 0)) : 0) + 1;
-      const consistencyNum = newConsistency ? parseFloat(newConsistency) : null;
-
+      const metrics = computeRaceMetrics(newPass1, newPass2);
       const { data, error } = await supabase
         .from("results")
         .insert({
@@ -192,8 +159,8 @@ export default function AdminResultsPage() {
           name: newName.trim(),
           first_half: newPass1.trim() || null,
           second_half: newPass2.trim() || null,
-          fastest: newFastest.trim() || null,
-          consistency: isNaN(consistencyNum as any) ? null : consistencyNum,
+          fastest: metrics.fastest,
+          consistency: metrics.consistency,
         })
         .select()
         .single();
@@ -208,8 +175,6 @@ export default function AdminResultsPage() {
       setNewName("");
       setNewPass1("");
       setNewPass2("");
-      setNewFastest("");
-      setNewConsistency("");
       setMessage({ type: "success", text: "Pass logged successfully!" });
     } catch (err: any) {
       console.error("Error logging pass:", err);
@@ -226,15 +191,17 @@ export default function AdminResultsPage() {
       name: result.name || "",
       first_half: result.first_half || "",
       second_half: result.second_half || "",
-      fastest: result.fastest || "",
-      consistency: result.consistency !== null ? String(result.consistency) : "",
     });
   };
 
   // Save inline edit
   const saveInlineEdit = async (resultId: string) => {
+    if (![editFormData.first_half, editFormData.second_half].every(isValidPassInput)) {
+      setMessage({ type: "error", text: "Use a time, a distance with ft or ', or DQ for each pass." });
+      return;
+    }
     try {
-      const consistencyNum = editFormData.consistency ? parseFloat(editFormData.consistency) : null;
+      const metrics = computeRaceMetrics(editFormData.first_half, editFormData.second_half);
 
       const { error } = await supabase
         .from("results")
@@ -242,8 +209,8 @@ export default function AdminResultsPage() {
           name: editFormData.name.trim() || null,
           first_half: editFormData.first_half.trim() || null,
           second_half: editFormData.second_half.trim() || null,
-          fastest: editFormData.fastest.trim() || null,
-          consistency: isNaN(consistencyNum as any) ? null : consistencyNum,
+          fastest: metrics.fastest,
+          consistency: metrics.consistency,
         })
         .eq("id", resultId);
 
@@ -257,8 +224,8 @@ export default function AdminResultsPage() {
                 name: editFormData.name,
                 first_half: editFormData.first_half,
                 second_half: editFormData.second_half,
-                fastest: editFormData.fastest,
-                consistency: consistencyNum,
+                fastest: metrics.fastest,
+                consistency: metrics.consistency,
               }
             : r
         )
@@ -291,6 +258,25 @@ export default function AdminResultsPage() {
     if (!currentRace) return;
 
     const newPublished = !currentRace.published;
+    if (newPublished) {
+      const { data: raceClasses, error: classError } = await supabase.from("classes").select("id").eq("race_id", selectedRaceId);
+      if (classError) { setMessage({ type: "error", text: classError.message }); return; }
+      if (!raceClasses?.length) { setMessage({ type: "error", text: "Add running classes and results before publishing." }); return; }
+      let hasEntry = false;
+      for (let start = 0; !hasEntry; start += 1000) {
+        const { data: entries, error: entriesError } = await supabase.from("results")
+          .select("id, name, first_half, second_half")
+          .in("class_id", raceClasses.map((item) => item.id)).order("id").range(start, start + 999);
+        if (entriesError) { setMessage({ type: "error", text: entriesError.message }); return; }
+        hasEntry = !!entries?.some(hasRecordedPass);
+        if (!entries || entries.length < 1000) break;
+      }
+      if (!hasEntry) {
+        setMessage({ type: "error", text: "There are no completed result entries to publish." });
+        return;
+      }
+      if (!confirm(`Publish results for ${currentRace.name}? The public site will show these entries immediately.`)) return;
+    }
     try {
       const { error } = await supabase
         .from("races")
@@ -439,7 +425,7 @@ export default function AdminResultsPage() {
                   type="text"
                   placeholder="e.g. 14.280 or 108.9'"
                   value={newPass1}
-                  onChange={(e) => handlePass1Change(e.target.value)}
+                  onChange={(e) => setNewPass1(e.target.value)}
                   className="w-full px-3 py-2 rounded-xl border text-xs font-mono outline-none focus:border-amber-600"
                   style={{ background: "var(--muted)", borderColor: "var(--border)", color: "var(--foreground)" }}
                 />
@@ -453,7 +439,7 @@ export default function AdminResultsPage() {
                   type="text"
                   placeholder="e.g. 13.910 or 77'"
                   value={newPass2}
-                  onChange={(e) => handlePass2Change(e.target.value)}
+                  onChange={(e) => setNewPass2(e.target.value)}
                   className="w-full px-3 py-2 rounded-xl border text-xs font-mono outline-none focus:border-amber-600"
                   style={{ background: "var(--muted)", borderColor: "var(--border)", color: "var(--foreground)" }}
                 />
@@ -461,13 +447,13 @@ export default function AdminResultsPage() {
 
               <div>
                 <label className="block text-[10px] font-bold uppercase tracking-wider mb-1 text-amber-600">
-                  Fastest Run
+                  Best Pass
                 </label>
                 <input
                   type="text"
                   placeholder="e.g. 13.910"
-                  value={newFastest}
-                  onChange={(e) => setNewFastest(e.target.value)}
+                  value={newMetrics.fastest || ""}
+                  readOnly
                   className="w-full px-3 py-2 rounded-xl border text-xs font-mono font-bold outline-none focus:border-amber-600"
                   style={{ background: "rgba(180,83,9,0.08)", borderColor: "var(--border)", color: "var(--foreground)" }}
                 />
@@ -483,8 +469,8 @@ export default function AdminResultsPage() {
                   type="number"
                   step="0.001"
                   placeholder="±0.000"
-                  value={newConsistency}
-                  onChange={(e) => setNewConsistency(e.target.value)}
+                  value={newMetrics.consistency ?? ""}
+                  readOnly
                   className="w-24 px-2 py-1 rounded-lg border text-xs font-mono outline-none"
                   style={{ background: "var(--muted)", borderColor: "var(--border)", color: "var(--foreground)" }}
                 />
@@ -561,7 +547,7 @@ export default function AdminResultsPage() {
                 <span>Driver</span>
                 <span className="text-right">Pass 1</span>
                 <span className="text-right">Pass 2</span>
-                <span className="text-right text-amber-600">Fastest</span>
+                <span className="text-right text-amber-600">Best Pass</span>
                 <span className="text-right">Consistency</span>
                 <span className="text-right">Actions</span>
               </div>
@@ -601,15 +587,15 @@ export default function AdminResultsPage() {
                       />
                       <input
                         type="text"
-                        value={editFormData.fastest}
-                        onChange={(e) => setEditFormData({ ...editFormData, fastest: e.target.value })}
+                        value={editMetrics.fastest || ""}
+                        readOnly
                         className="px-2 py-1 rounded border text-xs font-mono font-bold text-right outline-none"
                         style={{ background: "var(--surface)", borderColor: "var(--border)" }}
                       />
                       <input
                         type="text"
-                        value={editFormData.consistency}
-                        onChange={(e) => setEditFormData({ ...editFormData, consistency: e.target.value })}
+                        value={editMetrics.consistency ?? ""}
+                        readOnly
                         className="px-2 py-1 rounded border text-xs font-mono text-right outline-none"
                         style={{ background: "var(--surface)", borderColor: "var(--border)" }}
                       />
@@ -645,13 +631,13 @@ export default function AdminResultsPage() {
                       {res.name || "Unnamed Driver"}
                     </span>
                     <span className="text-right text-xs font-mono" style={{ color: "var(--muted-fg)" }}>
-                      {res.first_half || "—"}
+                      {formatPass(res.first_half)}
                     </span>
                     <span className="text-right text-xs font-mono" style={{ color: "var(--muted-fg)" }}>
-                      {res.second_half || "—"}
+                      {formatPass(res.second_half)}
                     </span>
                     <span className="text-right text-xs font-mono font-black text-amber-600">
-                      {res.fastest || "—"}
+                      {formatPass(res.fastest)}
                     </span>
                     <span className="text-right text-xs font-mono" style={{ color: "var(--muted-fg)" }}>
                       {res.consistency !== null ? `±${res.consistency}s` : "—"}

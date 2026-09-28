@@ -7,7 +7,7 @@ import { Lock, Mail, ArrowRight, ShieldCheck, AlertCircle } from "lucide-react";
 import Link from "next/link";
 
 export default function AdminLoginPage() {
-  const { signIn, user } = useAuth();
+  const { signIn, user, isAdmin, checkingAdmin, signOut } = useAuth();
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -33,7 +33,14 @@ export default function AdminLoginPage() {
     }
   };
 
-  if (user) {
+  if (user && !checkingAdmin && !isAdmin) {
+    return <div className="max-w-md mx-auto py-16 text-center space-y-4">
+      <h1 className="text-xl font-black">This account is not a race admin</h1>
+      <button type="button" onClick={() => signOut()} className="font-bold" style={{ color: "var(--primary)" }}>Sign out and use the authorized account</button>
+    </div>;
+  }
+
+  if (user && isAdmin) {
     return (
       <div className="max-w-md mx-auto py-16 text-center">
         <div className="rounded-2xl border p-8" style={{ background: "var(--surface)", borderColor: "var(--border)" }}>

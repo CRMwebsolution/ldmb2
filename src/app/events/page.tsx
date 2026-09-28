@@ -6,6 +6,8 @@ import { AnimateIn } from "@/components/AnimateIn";
 import { CountdownTimer } from "@/components/CountdownTimer";
 import { supabase } from "@/lib/supabase/client";
 import { Race } from "@/lib/supabase/types";
+import { isNextRace, isUpcomingEvent, todayAtTrack, raceStartIso } from "@/lib/race-schedule";
+import { formatRaceDate } from "@/lib/race-results";
 
 export default function EventsPage() {
   const [races, setRaces] = useState<Race[]>([]);
@@ -32,15 +34,10 @@ export default function EventsPage() {
     fetchRaces();
   }, []);
 
-  const todayStr = new Date().toISOString().split("T")[0];
-  const upcomingRaces = races.filter(
-    (r) => r.date >= todayStr || r.event_status === "scheduled"
-  );
-  const pastRaces = races.filter(
-    (r) => r.date < todayStr && r.event_status !== "scheduled"
-  );
-
-  const nextRace = upcomingRaces[0];
+  const todayStr = todayAtTrack();
+  const upcomingRaces = races.filter((race) => isUpcomingEvent(race, todayStr));
+  const pastRaces = races.filter((race) => !isUpcomingEvent(race, todayStr));
+  const nextRace = upcomingRaces.find((race) => isNextRace(race, todayStr));
 
   const getStatusBadge = (status: Race["event_status"]) => {
     switch (status) {
@@ -92,7 +89,7 @@ export default function EventsPage() {
             Race Events
           </h1>
           <p className="mt-2" style={{ color: "var(--muted-fg)" }}>
-            Monthly mud racing events at 759 Tom Mann Rd, Newport, NC. Gates open at 2:00 PM, racing starts at 4:00 PM.
+            Monthly mud racing across from 759 Tom Mann Rd, Newport, NC. Gates open at 2:00 PM, racing starts around 4:00 PM.
           </p>
         </div>
       </AnimateIn>
@@ -106,10 +103,10 @@ export default function EventsPage() {
           <MapPin className="w-5 h-5 shrink-0" style={{ color: "var(--primary)" }} />
           <div>
             <p className="font-semibold text-sm" style={{ color: "var(--foreground)" }}>
-              759 Tom Mann Rd, Newport, NC 28570
+              Across from 759 Tom Mann Rd, Newport, NC 28570
             </p>
             <p className="text-xs mt-0.5" style={{ color: "var(--muted-fg)" }}>
-              Gates open 2:00 PM · Racing begins 4:00 PM · Admission: \$10 Adults · Free for 12 &amp; Under
+              Gates open 2:00 PM · Racing begins around 4:00 PM · Admission: $10 Adults · Free for children 12 &amp; under with a paid adult
             </p>
           </div>
           <a
@@ -129,7 +126,7 @@ export default function EventsPage() {
         <AnimateIn delay={0.15}>
           <div className="mb-10">
             <CountdownTimer
-              targetDate={`${nextRace.date}T16:00:00`}
+              targetDate={raceStartIso(nextRace.date)}
               eventName={`${nextRace.name} Race`}
             />
           </div>
@@ -161,7 +158,7 @@ export default function EventsPage() {
         ) : (
           <div className="flex flex-col gap-4">
             {upcomingRaces.map((race, i) => {
-              const d = new Date(race.date + "T00:00:00");
+              const [year, , day] = race.date.slice(0, 10).split("-");
               return (
                 <AnimateIn key={race.id} delay={i * 0.08}>
                   <div
@@ -174,10 +171,10 @@ export default function EventsPage() {
                       style={{ background: "var(--primary)", color: "var(--primary-fg)" }}
                     >
                       <div className="text-xs font-bold uppercase tracking-wide">
-                        {d.toLocaleDateString("en-US", { month: "short" })}
+                        {formatRaceDate(race.date, { month: "short" })}
                       </div>
-                      <div className="text-3xl font-black leading-none">{d.getDate()}</div>
-                      <div className="text-xs mt-0.5">{d.getFullYear()}</div>
+                      <div className="text-3xl font-black leading-none">{Number(day)}</div>
+                      <div className="text-xs mt-0.5">{year}</div>
                     </div>
 
                     {/* Details */}
@@ -230,7 +227,7 @@ export default function EventsPage() {
                             <DollarSign className="w-3.5 h-3.5" /> Admission
                           </div>
                           <div className="text-sm font-semibold" style={{ color: "var(--foreground)" }}>
-                            \$10 Adults
+                            $10 Adults
                           </div>
                         </div>
                         <div>
@@ -241,7 +238,7 @@ export default function EventsPage() {
                             <DollarSign className="w-3.5 h-3.5" /> Kids (12-)
                           </div>
                           <div className="text-sm font-semibold" style={{ color: "var(--foreground)" }}>
-                            FREE
+                            Free with paid adult
                           </div>
                         </div>
                       </div>
@@ -305,7 +302,7 @@ export default function EventsPage() {
                         {getStatusBadge(race.event_status)}
                       </div>
                       <p className="text-xs mt-1" style={{ color: "var(--muted-fg)" }}>
-                        Completed championship race event at Little Doo Mud Bog.
+                        {race.event_status === "completed" ? "Race completed at Little Doo Mud Bog." : `Event status: ${race.event_status}.`}
                       </p>
                     </div>
                   </div>

@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { AnimateIn } from "@/components/AnimateIn";
-import { GalleryLightbox } from "@/components/GalleryLightbox";
-import { galleryImages } from "@/lib/data";
+import { GalleryContent } from "./GalleryContent";
 
 export const metadata: Metadata = {
   title: "Gallery",
@@ -27,14 +26,12 @@ export default function GalleryPage() {
           >
             Gallery
           </h1>
-          <p className="mt-2" style={{ color: "var(--muted-fg)" }}>
-            Click any photo to open the full-screen viewer.
-          </p>
+          <p className="mt-2" style={{ color: "var(--muted-fg)" }}>Photos and videos from the track, shared with approval.</p>
         </div>
       </AnimateIn>
 
       <AnimateIn delay={0.1}>
-        <GalleryLightbox images={galleryImages} />
+        <GalleryContent />
       </AnimateIn>
 
       {/* CTA */}
@@ -47,11 +44,10 @@ export default function GalleryPage() {
             Have photos to share?
           </p>
           <p className="text-sm mt-1" style={{ color: "var(--muted-fg)" }}>
-            Tag us on Facebook or send them our way — we love featuring
-            community shots from race day.
+            Share it with us on Facebook. The upload form appears when the gallery is connected.
           </p>
           <a
-            href="https://facebook.com"
+            href="https://www.facebook.com/share/g/1BGLGx5bLA/"
             target="_blank"
             rel="noopener noreferrer"
             className="inline-block mt-4 px-5 py-2.5 text-xs font-bold rounded-lg"

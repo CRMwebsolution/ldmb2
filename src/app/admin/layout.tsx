@@ -24,13 +24,13 @@ const navItems = [
   { href: "/admin", label: "Overview", icon: LayoutDashboard },
   { href: "/admin/races", label: "Race Nights", icon: Flag },
   { href: "/admin/results", label: "Log Passes & Results", icon: Trophy },
-  { href: "/admin/classes", label: "Class Catalog", icon: Truck },
-  { href: "/admin/rules", label: "Rules Book", icon: FileText },
+  { href: "/admin/racers", label: "Racer History", icon: ShieldCheck },
+  { href: "/admin/classes", label: "Classes & Rules", icon: Truck },
   { href: "/admin/sponsors", label: "Sponsors", icon: Building },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
-  const { user, loading, signOut, signIn } = useAuth();
+  const { user, loading, isAdmin, checkingAdmin, signOut, signIn } = useAuth();
   const pathname = usePathname();
   const router = useRouter();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -181,7 +181,19 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             </div>
           )}
 
-          {children}
+          {pathname === "/admin/login" ? children : loading || checkingAdmin ? (
+            <p className="p-6">Checking admin access...</p>
+          ) : !user ? (
+            <div className="rounded-2xl border p-6" style={{ borderColor: "var(--border)" }}>
+              <h1 className="font-black text-xl mb-2">Admin sign in required</h1>
+              <Link href="/admin/login" className="font-bold" style={{ color: "var(--primary)" }}>Sign in to manage races</Link>
+            </div>
+          ) : !isAdmin ? (
+            <div className="rounded-2xl border p-6" style={{ borderColor: "var(--border)" }}>
+              <h1 className="font-black text-xl mb-2">No race admin access</h1>
+              <p>This account is signed in but is not authorized to manage Little Doo races.</p>
+            </div>
+          ) : children}
         </main>
       </div>
     </div>

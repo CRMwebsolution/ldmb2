@@ -34,7 +34,6 @@ export default function AdminRacesPage() {
     special_label: "",
     event_status: "scheduled" as Race["event_status"],
     show_on_schedule: true,
-    published: false,
     pdf_url: "",
   });
   const [saving, setSaving] = useState(false);
@@ -82,7 +81,6 @@ export default function AdminRacesPage() {
       special_label: "",
       event_status: "scheduled",
       show_on_schedule: true,
-      published: false,
       pdf_url: "",
     });
     setModalOpen(true);
@@ -97,7 +95,6 @@ export default function AdminRacesPage() {
       special_label: race.special_label || "",
       event_status: race.event_status,
       show_on_schedule: race.show_on_schedule,
-      published: race.published || false,
       pdf_url: race.pdf_url || "",
     });
     setModalOpen(true);
@@ -120,7 +117,6 @@ export default function AdminRacesPage() {
             special_label: formData.special_label || null,
             event_status: formData.event_status,
             show_on_schedule: formData.show_on_schedule,
-            published: formData.published,
             pdf_url: formData.pdf_url || null,
           })
           .eq("id", editingRace.id);
@@ -137,13 +133,25 @@ export default function AdminRacesPage() {
             special_label: formData.special_label || null,
             event_status: formData.event_status,
             show_on_schedule: formData.show_on_schedule,
-            published: formData.published,
+            published: false,
             pdf_url: formData.pdf_url || null,
           })
           .select()
           .single();
 
         if (error) throw error;
+        if (data) {
+          const defaults = catalog.filter((item) => item.active).map((item) => ({
+            race_id: data.id,
+            name: item.name,
+            display_mode: item.default_display_mode,
+            order_num: item.sort_order,
+          }));
+          if (defaults.length) {
+            const { error: classesError } = await supabase.from("classes").insert(defaults);
+            if (classesError) throw new Error(`Race created, but classes could not be added: ${classesError.message}`);
+          }
+        }
         setMessage({ type: "success", text: "New race created successfully!" });
       }
 
@@ -158,7 +166,7 @@ export default function AdminRacesPage() {
   };
 
   const handleDeleteRace = async (raceId: string, name: string) => {
-    if (!confirm(`Are you sure you want to delete the race "${name}"? This will delete associated race class entries.`)) {
+    if (!confirm(`Delete the race "${name}" and all of its classes and results? This cannot be undone.`)) {
       return;
     }
 
@@ -203,7 +211,14 @@ export default function AdminRacesPage() {
       const existing = raceClasses.find((rc) => rc.name.toLowerCase() === cat.name.toLowerCase());
 
       if (existing) {
-        // Remove class from race night
+        const { count, error: countError } = await supabase.from("results")
+          .select("id", { count: "exact", head: true }).eq("class_id", existing.id);
+        if (countError) throw countError;
+        if (count) {
+          alert(`This class has ${count} result entries. Remove those entries in the results editor before removing the class.`);
+          return;
+        }
+        // Remove an empty class from this race night.
         const { error } = await supabase.from("classes").delete().eq("id", existing.id);
         if (error) throw error;
         setRaceClasses((prev) => prev.filter((c) => c.id !== existing.id));
@@ -558,7 +573,7 @@ export default function AdminRacesPage() {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3 pt-2">
+              <div className="pt-2">
                 <label className="flex items-center gap-2 p-3 rounded-xl border cursor-pointer" style={{ background: "var(--muted)", borderColor: "var(--border)" }}>
                   <input
                     type="checkbox"
@@ -572,18 +587,6 @@ export default function AdminRacesPage() {
                   </div>
                 </label>
 
-                <label className="flex items-center gap-2 p-3 rounded-xl border cursor-pointer" style={{ background: "var(--muted)", borderColor: "var(--border)" }}>
-                  <input
-                    type="checkbox"
-                    checked={formData.published}
-                    onChange={(e) => setFormData({ ...formData, published: e.target.checked })}
-                    className="rounded text-amber-600 w-4 h-4"
-                  />
-                  <div>
-                    <div className="text-xs font-bold" style={{ color: "var(--foreground)" }}>Publish Results</div>
-                    <div className="text-[10px]" style={{ color: "var(--muted-fg)" }}>Make passes public on leaderboard</div>
-                  </div>
-                </label>
               </div>
 
               <div className="flex items-center justify-end gap-2 pt-4">
@@ -710,7 +713,7 @@ export default function AdminRacesPage() {
 
                 {/* Grid of Catalog Classes to Toggle */}
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
-                  {catalog.map((cat) => {
+                  {catalog.filter((cat) => cat.active || raceClasses.some((item) => item.name.toLowerCase() === cat.name.toLowerCase())).map((cat) => {
                     const isSelected = raceClasses.some((rc) => rc.name.toLowerCase() === cat.name.toLowerCase());
                     return (
                       <button

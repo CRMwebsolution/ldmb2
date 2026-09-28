@@ -1,10 +1,9 @@
 "use client";
 
 import { motion, AnimatePresence } from "framer-motion";
-import Image from "next/image";
 import { useState, useCallback } from "react";
 import { X, ChevronLeft, ChevronRight } from "lucide-react";
-import type { GalleryImage } from "@/lib/data";
+import type { GalleryImage } from "@/lib/gallery";
 
 interface GalleryLightboxProps {
   images: GalleryImage[];
@@ -32,12 +31,12 @@ export function GalleryLightbox({ images }: GalleryLightboxProps) {
             whileTap={{ scale: 0.98 }}
             className="relative aspect-[4/3] overflow-hidden rounded-xl cursor-pointer group"
           >
-            <Image
+            {/* The existing gallery storage project is configured at deploy time. */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
               src={img.src}
               alt={img.alt}
-              fill
-              className="object-cover transition-transform duration-500 group-hover:scale-105"
-              sizes="(max-width: 640px) 50vw, 33vw"
+              className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
             />
             <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors duration-300" />
             {img.event && (
@@ -93,11 +92,10 @@ export function GalleryLightbox({ images }: GalleryLightboxProps) {
               className="relative max-w-4xl max-h-[80vh] w-full mx-16"
               onClick={(e) => e.stopPropagation()}
             >
-              <Image
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
                 src={images[selected].src}
                 alt={images[selected].alt}
-                width={1200}
-                height={800}
                 className="w-full h-auto max-h-[80vh] object-contain rounded-xl"
               />
               {images[selected].event && (

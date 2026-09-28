@@ -79,7 +79,7 @@ export default function SponsorsPage() {
               Sponsorship Program 2026
             </h2>
             <p className="text-sm max-w-lg mx-auto mt-2 leading-relaxed" style={{ color: "var(--muted-fg)" }}>
-              Put your brand in front of thousands of passionate motorsports fans every month. We offer banner space, PA announcements, social media promotion, and VIP track access.
+              Interested in supporting the track? Contact us to discuss current sponsorship opportunities.
             </p>
             <div className="mt-6 flex flex-wrap justify-center gap-3">
               <a
@@ -188,7 +188,7 @@ export default function SponsorsPage() {
             Become a Little Doo Sponsor
           </h2>
           <p className="text-sm mt-2 max-w-md mx-auto leading-relaxed" style={{ color: "var(--muted-fg)" }}>
-            Connect with off-road competitors and loyal motorsports families throughout the season. Packages include pit signage, event announcements, and digital visibility.
+            Contact us to discuss sponsorship options for upcoming race nights.
           </p>
           <div className="mt-6">
             <a

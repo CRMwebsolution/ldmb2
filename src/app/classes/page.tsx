@@ -223,18 +223,9 @@ export default function ClassesPage() {
                 General Track Safety &amp; Tech Policy
               </h3>
               <p className="text-xs sm:text-sm leading-relaxed mt-1" style={{ color: "var(--muted-fg)" }}>
-                All drivers must wear a DOT-approved helmet and fastened seatbelt. Vehicles running alcohol or extreme power adders require full fire suits. All placement and safety decisions remain at the final discretion of Little Doo track officials.
+                Vehicles are inspected before racing. Review the posted class rules and ask track officials about safety requirements and class placement before entering.
               </p>
               <div className="mt-4 flex flex-wrap gap-4 text-xs font-semibold" style={{ color: "var(--primary)" }}>
-                <span className="flex items-center gap-1">
-                  <CheckCircle2 className="w-3.5 h-3.5" /> Working Brakes &amp; Reverse Required
-                </span>
-                <span className="flex items-center gap-1">
-                  <CheckCircle2 className="w-3.5 h-3.5" /> Solid Recovery Hookups
-                </span>
-                <span className="flex items-center gap-1">
-                  <CheckCircle2 className="w-3.5 h-3.5" /> No Chain Hookups
-                </span>
               </div>
             </div>
           </div>

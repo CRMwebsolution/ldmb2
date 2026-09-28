@@ -8,11 +8,11 @@ import { AnimateIn } from "@/components/AnimateIn";
 import { CountdownTimer } from "@/components/CountdownTimer";
 import { supabase } from "@/lib/supabase/client";
 import { Race, ClassCatalog } from "@/lib/supabase/types";
+import { isNextRace, raceStartIso } from "@/lib/race-schedule";
 
 const fallbackStats = [
   { label: "Track Length", value: "200 ft", icon: "📏" },
-  { label: "Shutdown Area", value: "700 ft", icon: "🛑" },
-  { label: "Active Classes", value: "10+", icon: "🏎️" },
+  { label: "Active Classes", value: "—", icon: "🏎️" },
   { label: "Season", value: "Feb–Dec", icon: "🗓️" },
 ];
 
@@ -33,7 +33,6 @@ export default function HomePage() {
   useEffect(() => {
     async function loadData() {
       try {
-        const today = new Date().toISOString().split("T")[0];
         const [racesRes, catalogRes] = await Promise.all([
           supabase
             .from("races")
@@ -62,16 +61,8 @@ export default function HomePage() {
     loadData();
   }, []);
 
-  // Find the next upcoming race (today or future, or first scheduled)
-  const todayStr = new Date().toISOString().split("T")[0];
-  const nextRace =
-    upcomingRaces.find((r) => r.date >= todayStr && r.event_status !== "cancelled") ||
-    upcomingRaces.find((r) => r.event_status === "scheduled") ||
-    upcomingRaces[0];
-
-  const targetDateForCountdown = nextRace
-    ? `${nextRace.date}T16:00:00`
-    : "2026-10-17T16:00:00";
+  const nextRace = upcomingRaces.find((race) => isNextRace(race));
+  const visibleUpcoming = upcomingRaces.filter((race) => isNextRace(race));
 
   return (
     <div>
@@ -161,7 +152,7 @@ export default function HomePage() {
             className="text-base sm:text-lg max-w-xl mx-auto mb-8"
             style={{ color: "rgba(255,255,255,0.7)" }}
           >
-            Family-owned mud racing on the Crystal Coast. Monthly championship events — from bone-stock daily drivers to 1,000+ HP unlimited monsters.
+            Family owned mud racing in Newport, North Carolina. Come see trucks and custom machines take on the 200-foot track.
           </motion.p>
 
           <motion.div
@@ -178,14 +169,14 @@ export default function HomePage() {
               <Calendar className="w-4 h-4" /> View Schedule
             </Link>
             <Link
-              href="/leaderboard"
+              href="/race-results"
               className="px-6 py-3 rounded-xl font-bold text-sm border transition-all hover:scale-105 active:scale-100 flex items-center gap-2"
               style={{
                 borderColor: "rgba(255,255,255,0.2)",
                 color: "rgba(255,255,255,0.85)",
               }}
             >
-              <Trophy className="w-4 h-4" /> Live Results
+              <Trophy className="w-4 h-4" /> Race Results
             </Link>
           </motion.div>
 
@@ -245,7 +236,7 @@ export default function HomePage() {
                 </p>
               </div>
               <CountdownTimer
-                targetDate={targetDateForCountdown}
+              targetDate={raceStartIso(nextRace.date)}
                 eventName={`${nextRace.name} Race`}
               />
               <div className="mt-4 text-center">
@@ -313,12 +304,11 @@ export default function HomePage() {
             <p style={{ color: "var(--muted-fg)" }} className="leading-relaxed mb-4">
               Located at 759 Tom Mann Rd in Newport, NC, Little Doo Mud Bog is
               a family-owned venue built for grassroots racers and off-road families.
-              Our 200-foot clay-and-mud pit paired with a 700-foot shutdown area provides
-              high-speed passes and unforgettable race nights.
+              The 200-foot mud track has welcomed racers and families for generations.
             </p>
             <p style={{ color: "var(--muted-fg)" }} className="leading-relaxed mb-6">
               Spectators are welcome to bring tailgate chairs and cookout grills.
-              Kids 12 &amp; under always get in free.
+              Kids 12 &amp; under get in free with a paid adult.
             </p>
             <div className="flex items-center gap-4">
               <Link
@@ -396,7 +386,7 @@ export default function HomePage() {
           </AnimateIn>
 
           <div className="grid sm:grid-cols-3 gap-4">
-            {upcomingRaces.slice(0, 3).map((race, i) => {
+            {visibleUpcoming.slice(0, 3).map((race, i) => {
               const d = new Date(race.date + "T00:00:00");
               return (
                 <AnimateIn key={race.id} delay={i * 0.1}>

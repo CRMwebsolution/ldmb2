@@ -13,6 +13,9 @@ export default function ContactPage() {
     message: "",
   });
   const [sent, setSent] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState("");
+  const [website, setWebsite] = useState("");
 
   function handleChange(
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
@@ -20,10 +23,23 @@ export default function ContactPage() {
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
   }
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    // In production, wire this up to a real form API (Resend, Formspree, etc.)
-    setSent(true);
+    setSending(true);
+    setSendError("");
+    try {
+      const response = await fetch("/api/contact", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...form, website }),
+      });
+      if (!response.ok) throw new Error("Message could not be sent. Please call us instead.");
+      setSent(true);
+    } catch (error) {
+      setSendError(error instanceof Error ? error.message : "Message could not be sent.");
+    } finally {
+      setSending(false);
+    }
   }
 
   const inputStyle = {
@@ -69,7 +85,7 @@ export default function ContactPage() {
               {
                 icon: <MapPin className="w-5 h-5" />,
                 label: "Address",
-                value: "759 Tom Mann Rd\nNewport, NC 28570",
+                value: "Across from 759 Tom Mann Rd\nNewport, NC 28570",
                 href: "https://maps.google.com/?q=759+Tom+Mann+Rd+Newport+NC",
               },
               {
@@ -87,7 +103,7 @@ export default function ContactPage() {
                 icon: <ExternalLink className="w-5 h-5" />,
                 label: "Facebook",
                 value: "Follow for updates",
-                href: "https://facebook.com",
+                href: "https://www.facebook.com/share/g/1BGLGx5bLA/",
               },
             ].map((item) => (
               <div
@@ -154,6 +170,10 @@ export default function ContactPage() {
               </div>
             ) : (
               <form onSubmit={handleSubmit} className="space-y-4">
+                <div className="hidden" aria-hidden="true"><label htmlFor="website">Website</label>
+                  <input id="website" tabIndex={-1} autoComplete="off" value={website} onChange={(e) => setWebsite(e.target.value)} />
+                </div>
+                {sendError && <p role="alert" className="text-red-600 text-sm">{sendError}</p>}
                 <div className="grid sm:grid-cols-2 gap-4">
                   <div>
                     <label
@@ -222,7 +242,7 @@ export default function ContactPage() {
                     >
                       <option value="">Select a topic</option>
                       <option>General Inquiry</option>
-                      <option>Driver Registration</option>
+                      <option>Racing Questions</option>
                       <option>Sponsorship</option>
                       <option>Media / Photography</option>
                       <option>Other</option>
@@ -250,11 +270,12 @@ export default function ContactPage() {
 
                 <button
                   type="submit"
+                  disabled={sending}
                   className="w-full flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-sm transition-all hover:scale-[1.02] active:scale-100"
                   style={{ background: "var(--primary)", color: "var(--primary-fg)" }}
                 >
                   <Send className="w-4 h-4" />
-                  Send Message
+                  {sending ? "Sending..." : "Send Message"}
                 </button>
               </form>
             )}

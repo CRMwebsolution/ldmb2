@@ -13,7 +13,7 @@ const links = [
   { href: "/classes", label: "Classes" },
   { href: "/track", label: "Track" },
   { href: "/gallery", label: "Gallery" },
-  { href: "/leaderboard", label: "Results" },
+  { href: "/race-results", label: "Results" },
   { href: "/sponsors", label: "Sponsors" },
   { href: "/contact", label: "Contact" },
 ];
@@ -90,7 +90,7 @@ export function Navbar() {
                   color: "var(--primary-fg)",
                 }}
               >
-                Buy Tickets
+                View Schedule
               </Link>
               {/* Mobile menu button */}
               <button
@@ -144,7 +144,7 @@ export function Navbar() {
                 className="mt-2 px-3 py-2.5 rounded-md text-sm font-semibold text-center"
                 style={{ background: "var(--primary)", color: "var(--primary-fg)" }}
               >
-                Buy Tickets
+                View Schedule
               </Link>
             </nav>
           </motion.div>

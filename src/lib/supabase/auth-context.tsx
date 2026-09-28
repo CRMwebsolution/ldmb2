@@ -8,6 +8,8 @@ interface AuthContextType {
   user: User | null;
   session: Session | null;
   loading: boolean;
+  isAdmin: boolean;
+  checkingAdmin: boolean;
   signIn: (email: string, pass: string) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
 }
@@ -16,6 +18,8 @@ const AuthContext = createContext<AuthContextType>({
   user: null,
   session: null,
   loading: true,
+  isAdmin: false,
+  checkingAdmin: true,
   signIn: async () => ({ error: null }),
   signOut: async () => {},
 });
@@ -24,6 +28,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const [verifiedAdmin, setVerifiedAdmin] = useState<{ userId: string; allowed: boolean } | null>(null);
+  const userId = user?.id;
+  const isAdmin = !!userId && verifiedAdmin?.userId === userId && verifiedAdmin.allowed;
+  const checkingAdmin = !!userId && verifiedAdmin?.userId !== userId;
 
   useEffect(() => {
     async function getInitialSession() {
@@ -53,6 +61,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  useEffect(() => {
+    let active = true;
+    if (!userId) return;
+    supabase.rpc("is_current_race_admin").then(({ data, error }) => {
+      if (!active) return;
+      if (error) console.error("Could not verify race admin access:", error);
+      setVerifiedAdmin({ userId, allowed: !error && data === true });
+    });
+    return () => { active = false; };
+  }, [userId]);
+
   const signIn = async (email: string, pass: string) => {
     const { error } = await supabase.auth.signInWithPassword({
       email,
@@ -66,7 +85,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, session, loading, signIn, signOut }}>
+    <AuthContext.Provider value={{ user, session, loading, isAdmin, checkingAdmin, signIn, signOut }}>
       {children}
     </AuthContext.Provider>
   );

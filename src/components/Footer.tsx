@@ -27,7 +27,7 @@ export function Footer() {
               Gates open at 2 PM, racing starts at 4 PM — come make memories.
             </p>
             <a
-              href="https://facebook.com"
+              href="https://www.facebook.com/share/g/1BGLGx5bLA/"
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-2 mt-4 text-sm font-medium transition-colors"
@@ -52,7 +52,7 @@ export function Footer() {
                 ["Vehicle Classes & Rules", "/classes"],
                 ["Track Info", "/track"],
                 ["Photo Gallery", "/gallery"],
-                ["Leaderboard & Results", "/leaderboard"],
+                ["Race Results", "/race-results"],
                 ["Track Sponsors", "/sponsors"],
                 ["Contact & Directions", "/contact"],
                 ["Admin Portal", "/admin"],

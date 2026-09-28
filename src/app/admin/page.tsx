@@ -37,7 +37,7 @@ export default function AdminOverviewPage() {
           supabase.from("class_catalog").select("*", { count: "exact" }),
           supabase.from("results").select("*", { count: "exact" }),
           supabase.from("sponsors").select("*", { count: "exact" }),
-          supabase.from("rules").select("*", { count: "exact" }),
+          supabase.from("class_catalog").select("id", { count: "exact" }).not("rules", "is", null),
         ]);
 
         setCounts({
@@ -65,7 +65,7 @@ export default function AdminOverviewPage() {
     { label: "Race Nights", count: counts.races, href: "/admin/races", icon: Flag, desc: "Scheduled & past races" },
     { label: "Contestant Passes", count: counts.results, href: "/admin/results", icon: Trophy, desc: "Logged times & passes" },
     { label: "Master Classes", count: counts.catalog, href: "/admin/classes", icon: Truck, desc: "In class catalog" },
-    { label: "Class Rules", count: counts.rules, href: "/admin/rules", icon: FileText, desc: "Official rule book" },
+    { label: "Class Rules", count: counts.rules, href: "/admin/classes", icon: FileText, desc: "Posted in the catalog" },
     { label: "Sponsors", count: counts.sponsors, href: "/admin/sponsors", icon: Building, desc: "Active & tiers" },
   ];
 
