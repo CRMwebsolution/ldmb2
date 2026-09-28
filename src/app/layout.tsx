@@ -19,6 +19,10 @@ export const metadata: Metadata = {
   description:
     "Family-friendly mud racing in Newport, North Carolina. Monthly events Feb–Dec. Gates open 2 PM, racing at 4 PM. Adults $10, kids 12 & under free.",
   keywords: ["mud bog", "mud racing", "Newport NC", "off-road", "family events"],
+  icons: {
+    icon: [{ url: "/ldmbfav.png", type: "image/png", sizes: "1024x1024" }],
+    apple: [{ url: "/ldmbfav.png", type: "image/png", sizes: "1024x1024" }],
+  },
   openGraph: {
     title: "Little Doo Mud Bog",
     description: "Family-friendly mud racing in Newport, North Carolina.",
