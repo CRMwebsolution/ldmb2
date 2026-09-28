@@ -6,6 +6,8 @@ export type ParsedPass = { kind: PassKind; value: number | null };
 const DISTANCE = /^(-?\d+(?:\.\d+)?)\s*(?:ft|feet|foot|['’′])$/i;
 const TIME = /^-?\d+(?:\.\d+)?$/;
 const DQ = /^(?:dq|d\/q|disqualified)$/i;
+const RECORDED_DQ = /^(?:(?:\d+)\s*)?(?:dq|d\/q|disqualified)$/i;
+const NO_PASS_MARKER = /^(?:-|['’′])$/;
 
 export function parsePass(raw: unknown): ParsedPass {
   const value = raw == null ? "" : String(raw).trim();
@@ -18,7 +20,8 @@ export function parsePass(raw: unknown): ParsedPass {
 }
 
 export function isValidPassInput(raw: unknown): boolean {
-  return parsePass(raw).kind !== "invalid" || DQ.test(String(raw).trim());
+  const value = String(raw ?? "").trim();
+  return parsePass(raw).kind !== "invalid" || RECORDED_DQ.test(value) || NO_PASS_MARKER.test(value);
 }
 
 export function hasRecordedPass(row: {
@@ -28,7 +31,7 @@ export function hasRecordedPass(row: {
 }): boolean {
   return !!row.name?.trim() && [row.first_half, row.second_half].some((raw) => {
     const kind = parsePass(raw).kind;
-    return kind === "time" || kind === "distance" || DQ.test(String(raw ?? "").trim());
+    return kind === "time" || kind === "distance" || RECORDED_DQ.test(String(raw ?? "").trim());
   });
 }
 

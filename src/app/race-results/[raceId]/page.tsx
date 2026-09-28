@@ -7,6 +7,7 @@ import { ArrowLeft, ChevronDown, ChevronUp } from "lucide-react";
 import { supabase } from "@/lib/supabase/client";
 import type { Race, RaceClass, RaceResult } from "@/lib/supabase/types";
 import { formatPass, formatRaceDate, sortClassResults } from "@/lib/race-results";
+import { todayAtTrack } from "@/lib/race-schedule";
 import { generateRacePdf } from "@/lib/generate-race-pdf";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -22,17 +23,29 @@ export default function RaceResultsDetail() {
 
   useEffect(() => {
     let active = true;
-    async function load() {
-      setLoading(true);
-      setError("");
-      setRace(null);
-      setClasses([]);
+    let inFlight = false;
+    let activeRaceDate = "";
+    let ticks = 0;
+    async function load(initial = false) {
+      if (inFlight) return;
+      inFlight = true;
+      if (initial) {
+        setLoading(true);
+        setError("");
+        setRace(null);
+        setClasses([]);
+      }
       try {
         const selector = UUID.test(raceId) ? "id" : "slug";
         const { data: event, error: raceError } = await supabase.from("races")
           .select("*").eq(selector, raceId).eq("published", true).maybeSingle();
         if (raceError) throw raceError;
-        if (!event) return;
+        if (!event) {
+          activeRaceDate = "";
+          if (active) { setRace(null); setClasses([]); }
+          return;
+        }
+        activeRaceDate = event.date;
 
         const { data: raceClasses, error: classError } = await supabase.from("classes")
           .select("*").eq("race_id", event.id).order("order_num", { ascending: true });
@@ -50,6 +63,7 @@ export default function RaceResultsDetail() {
           }
         }
         if (!active) return;
+        setError("");
         setRace(event);
         setClasses((raceClasses || []).map((item) => ({
           ...item,
@@ -57,13 +71,18 @@ export default function RaceResultsDetail() {
         })));
       } catch (err) {
         console.error("Could not load race results", err);
-        if (active) setError("Results could not be loaded. Please try again later.");
+        if (active && initial) setError("Results could not be loaded. Please try again later.");
       } finally {
-        if (active) setLoading(false);
+        inFlight = false;
+        if (active && initial) setLoading(false);
       }
     }
-    load();
-    return () => { active = false; };
+    void load(true);
+    const interval = window.setInterval(() => {
+      ticks += 1;
+      if (document.visibilityState === "visible" && (activeRaceDate === todayAtTrack() || ticks % 6 === 0)) void load();
+    }, 5000);
+    return () => { active = false; window.clearInterval(interval); };
   }, [raceId]);
 
   return <div className="max-w-6xl mx-auto px-4 py-12">
@@ -75,6 +94,7 @@ export default function RaceResultsDetail() {
         <span className="text-xs font-bold uppercase tracking-widest" style={{ color: "var(--primary)" }}>Official race results</span>
         <h1 className="text-4xl sm:text-5xl font-black mt-2">{race.name}</h1>
         <p className="mt-2" style={{ color: "var(--muted-fg)" }}>{formatRaceDate(race.date)}</p>
+        <p className="mt-1 text-xs" style={{ color: "var(--muted-fg)" }}>Published passes refresh automatically while this page is open, every few seconds on race day.</p>
         {classes.length > 0 && <button type="button" onClick={() => generateRacePdf(race, classes)}
           className="mt-4 rounded-lg px-4 py-2 font-bold text-sm" style={{ background: "var(--primary)", color: "var(--primary-fg)" }}>
           Download Official PDF

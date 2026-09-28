@@ -13,6 +13,7 @@ export function GalleryContent() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [file, setFile] = useState<File | null>(null);
+  const [dragOver, setDragOver] = useState(false);
   const [caption, setCaption] = useState("");
   const [uploading, setUploading] = useState(false);
   const [message, setMessage] = useState("");
@@ -20,7 +21,6 @@ export function GalleryContent() {
 
   useEffect(() => {
     let active = true;
-    if (!galleryClient) return;
     galleryClient.from("truck_photos").select("id, photo_url, description, year, uploaded_at")
       .eq("status", "approved").order("year", { ascending: false }).order("uploaded_at", { ascending: false })
       .then(({ data, error }) => {
@@ -39,9 +39,20 @@ export function GalleryContent() {
   const years = [...new Set(media.map((item) => item.year))].sort((a, b) => b - a);
   const currentYear = new Date().getFullYear();
 
+  function choosePhoto(files: FileList | null) {
+    const candidates = Array.from(files || []);
+    const images = candidates.filter((candidate) => candidate.type.startsWith("image/"));
+    if (!images.length) {
+      setMessage("Choose an image to submit.");
+      return;
+    }
+    setFile(images[0]);
+    setMessage(candidates.length > 1 ? "Only one photo can be submitted at a time. We kept the first image." : "");
+  }
+
   async function uploadPhoto(event: React.FormEvent) {
     event.preventDefault();
-    if (!galleryClient || !file) return;
+    if (!file) return;
     if (!file.type.startsWith("image/") || file.size > 15 * 1024 * 1024) {
       setMessage("Choose one image smaller than 15 MB.");
       return;
@@ -79,7 +90,6 @@ export function GalleryContent() {
     }
   }
 
-  if (!galleryClient) return <p className="rounded-2xl border p-6" style={{ borderColor: "var(--border)" }}>Track photos are temporarily unavailable. More photos are on our Facebook page.</p>;
   return <div className="space-y-8">
     {loading ? <p>Loading track photos...</p> : error ? <p role="alert">{error}</p> : years.length === 0 ? <p>No approved photos have been posted yet.</p> : years.map((year) => {
       const items = media.filter((item) => item.year === year);
@@ -95,9 +105,19 @@ export function GalleryContent() {
       </section>;
     })}
     <form onSubmit={uploadPhoto} className="rounded-2xl border p-5 space-y-3" style={{ borderColor: "var(--border)", background: "var(--surface)" }}>
-      <h2 className="font-black text-lg">Share a race day photo</h2>
+      <h2 className="font-black text-lg">Submit a Photo</h2>
       <p className="text-sm" style={{ color: "var(--muted-fg)" }}>Choose one image. Photos are reviewed before appearing here.</p>
-      <input type="file" accept="image/*" onChange={(event) => setFile(event.target.files?.[0] || null)} aria-label="Choose a photo" />
+      <div className="rounded-xl border-2 border-dashed p-5 text-center"
+        style={{ borderColor: dragOver ? "var(--primary)" : "var(--border)", background: "var(--muted)" }}
+        onDragOver={(event) => { event.preventDefault(); setDragOver(true); }}
+        onDragLeave={(event) => { event.preventDefault(); setDragOver(false); }}
+        onDrop={(event) => { event.preventDefault(); setDragOver(false); choosePhoto(event.dataTransfer.files); }}>
+        <label className="block font-semibold" htmlFor="gallery-photo">Choose a photo or drag one here</label>
+        <input id="gallery-photo" type="file" accept="image/*" className="mt-2 max-w-full"
+          onChange={(event) => { choosePhoto(event.target.files); event.target.value = ""; }} />
+        {file && <div className="mt-3 text-sm">Selected: {file.name} <button type="button" onClick={() => setFile(null)}
+          className="ml-2 font-bold underline" style={{ color: "var(--primary)" }}>Remove</button></div>}
+      </div>
       <input type="text" value={caption} onChange={(event) => setCaption(event.target.value)} maxLength={300}
         placeholder="Optional caption" aria-label="Photo caption" className="block w-full rounded-lg border p-2" style={{ borderColor: "var(--border)", background: "var(--muted)" }} />
       <button type="submit" disabled={!file || uploading} className="rounded-lg px-4 py-2 font-bold disabled:opacity-50" style={{ background: "var(--primary)", color: "var(--primary-fg)" }}>

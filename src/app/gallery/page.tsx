@@ -44,7 +44,7 @@ export default function GalleryPage() {
             Have photos to share?
           </p>
           <p className="text-sm mt-1" style={{ color: "var(--muted-fg)" }}>
-            Share it with us on Facebook. The upload form appears when the gallery is connected.
+            Use the form above to submit one photo for approval, or share it with us on Facebook.
           </p>
           <a
             href="https://www.facebook.com/share/g/1BGLGx5bLA/"

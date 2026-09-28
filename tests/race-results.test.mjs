@@ -5,6 +5,7 @@ import {
   isValidPassInput, sortClassResults,
 } from "../src/lib/race-results.ts";
 import { raceStartIso, todayAtTrack } from "../src/lib/race-schedule.ts";
+import { buildRaceSavePayload, prepareRaceEditor } from "../src/lib/race-editor.ts";
 
 test("completed timed runs beat distances, with the lower time winning", () => {
   assert.equal(compareBestPass("9.900", "200ft"), -1);
@@ -28,6 +29,39 @@ test("publishing requires a named recorded pass and rejects malformed new input"
   assert.equal(isValidPassInput("12.3ft"), true);
   assert.equal(isValidPassInput("DQ"), true);
   assert.equal(isValidPassInput("12.3 furlongs"), false);
+  assert.equal(isValidPassInput("19DQ"), true);
+  assert.equal(isValidPassInput("-"), true);
+  assert.equal(hasRecordedPass({ name: "Driver", first_half: "19DQ", second_half: "" }), true);
+});
+
+test("race-night Save All keeps blank rows local and removes old stored blanks", () => {
+  const { classes, staleBlankIds } = prepareRaceEditor(
+    [{ id: "class-1", race_id: "race-1", name: "Unlimited", display_mode: "fastest", order_num: 1 }],
+    [
+      { id: "blank", class_id: "class-1", name: "", first_half: null, second_half: null, order_num: 1 },
+      { id: "racer", class_id: "class-1", name: "Chris R", first_half: "9.082", second_half: "9.019", order_num: 2 },
+    ],
+  );
+  assert.equal(classes[0].results.length, 20);
+  assert.deepEqual(staleBlankIds, ["blank"]);
+  const payload = buildRaceSavePayload(classes, staleBlankIds);
+  assert.equal(payload.resultPayload.length, 1);
+  assert.deepEqual(payload.deleteIds, ["blank"]);
+  assert.equal(payload.resultPayload[0].fastest, "9.019");
+  assert.equal(payload.resultPayload[0].consistency, 0.063);
+});
+
+test("legacy no-pass markers survive editing without becoming numeric times", () => {
+  const { classes } = prepareRaceEditor(
+    [{ id: "class-1", race_id: "race-1", name: "C Class", display_mode: "both", order_num: 1 }],
+    [{ id: "racer", class_id: "class-1", name: "Driver", first_half: "4.945", second_half: "-", order_num: 1 }],
+  );
+  assert.deepEqual(buildRaceSavePayload(classes, []).resultPayload[0], {
+    id: "racer", class_id: "class-1", order_num: 1, name: "Driver",
+    first_half: "4.945", second_half: "-", fastest: "4.945", consistency: null,
+  });
+  classes[0].results[0].second_half = "bogus";
+  assert.throws(() => buildRaceSavePayload(classes, []), /pass format/);
 });
 
 test("class display mode determines the order without treating entry order as rank", () => {

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { Clock, DollarSign, MapPin, Flag, FileText, CheckCircle2, AlertCircle } from "lucide-react";
 import { AnimateIn } from "@/components/AnimateIn";
 import { CountdownTimer } from "@/components/CountdownTimer";
@@ -12,6 +13,7 @@ import { formatRaceDate } from "@/lib/race-results";
 export default function EventsPage() {
   const [races, setRaces] = useState<Race[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
 
   useEffect(() => {
     async function fetchRaces() {
@@ -22,11 +24,11 @@ export default function EventsPage() {
           .eq("show_on_schedule", true)
           .order("date", { ascending: true });
 
-        if (data) {
-          setRaces(data);
-        }
+        if (error) throw error;
+        setRaces(data || []);
       } catch (err) {
         console.error("Error fetching races:", err);
+        setLoadError("The schedule could not be loaded. Please try again later.");
       } finally {
         setLoading(false);
       }
@@ -148,6 +150,8 @@ export default function EventsPage() {
           <div className="p-8 text-center" style={{ color: "var(--muted-fg)" }}>
             Loading schedule from Supabase...
           </div>
+        ) : loadError ? (
+          <p role="alert" className="rounded-2xl border p-8" style={{ borderColor: "var(--border)" }}>{loadError}</p>
         ) : upcomingRaces.length === 0 ? (
           <div
             className="rounded-2xl border p-8 text-center"
@@ -277,7 +281,7 @@ export default function EventsPage() {
           </AnimateIn>
           <div className="flex flex-col gap-4">
             {pastRaces.map((race, i) => {
-              const d = new Date(race.date + "T00:00:00");
+              const [year, , day] = race.date.slice(0, 10).split("-");
               return (
                 <AnimateIn key={race.id} delay={i * 0.06}>
                   <div
@@ -289,10 +293,10 @@ export default function EventsPage() {
                       style={{ background: "var(--muted)", color: "var(--muted-fg)" }}
                     >
                       <div className="text-xs font-bold uppercase">
-                        {d.toLocaleDateString("en-US", { month: "short" })}
+                        {formatRaceDate(race.date, { month: "short" })}
                       </div>
-                      <div className="text-2xl font-black leading-none">{d.getDate()}</div>
-                      <div className="text-[10px] mt-0.5">{d.getFullYear()}</div>
+                      <div className="text-2xl font-black leading-none">{Number(day)}</div>
+                      <div className="text-[10px] mt-0.5">{year}</div>
                     </div>
                     <div className="flex-1">
                       <div className="flex items-center justify-between gap-2">
@@ -304,6 +308,10 @@ export default function EventsPage() {
                       <p className="text-xs mt-1" style={{ color: "var(--muted-fg)" }}>
                         {race.event_status === "completed" ? "Race completed at Little Doo Mud Bog." : `Event status: ${race.event_status}.`}
                       </p>
+                      {race.published && <Link href={`/race-results/${race.slug || race.id}`}
+                        className="inline-flex mt-3 text-sm font-bold hover:underline" style={{ color: "var(--primary)" }}>
+                        See Results
+                      </Link>}
                     </div>
                   </div>
                 </AnimateIn>

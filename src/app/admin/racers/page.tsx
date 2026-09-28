@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
 import {
   buildRacerLeaderboard, fetchHistoryRows, filterRacerLeaderboardByYear,
-  getRacerLeaderboardYears, type EstimatedRacerSummary,
+  formatRaceDate, getRacerLeaderboardYears, type EstimatedRacerSummary,
 } from "@/lib/estimated-racer-history";
 
 export default function RacerEstimatesPage() {
@@ -50,7 +50,15 @@ export default function RacerEstimatesPage() {
           </summary>
           <div className="px-4 pb-4 text-sm" style={{ color: "var(--muted-fg)" }}>
             {racer.recordedNames.length > 1 && <p>Recorded as: {racer.recordedNames.join(", ")}</p>}
-            {racer.classes.map((cls) => <p key={cls.className}>{cls.className}: {cls.events.length} {cls.events.length === 1 ? "event" : "events"}</p>)}
+            {racer.classes.map((cls) => <section key={cls.className} className="mt-3 rounded-lg border p-3" style={{ borderColor: "var(--border)" }}>
+              <h2 className="font-bold" style={{ color: "var(--foreground)" }}>{cls.className} · {cls.events.length} {cls.events.length === 1 ? "race" : "races"}</h2>
+              <ul className="mt-2 space-y-2">
+                {cls.events.map((event) => <li key={event.raceId} className="flex flex-wrap justify-between gap-x-4 border-t pt-2" style={{ borderColor: "var(--border)" }}>
+                  <span>{event.raceName} <span className="text-xs">(recorded as {event.recordedNames.join(", ")})</span></span>
+                  <time dateTime={event.date} className="font-semibold">{formatRaceDate(event.date)}</time>
+                </li>)}
+              </ul>
+            </section>)}
           </div>
         </details>)}
       </div>

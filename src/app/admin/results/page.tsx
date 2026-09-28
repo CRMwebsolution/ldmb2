@@ -1,672 +1,316 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
+import { ArrowDown, ArrowUp, ChevronDown, ChevronUp, FileDown, Plus, RefreshCw, Save, Trophy } from "lucide-react";
 import { supabase } from "@/lib/supabase/client";
-import { Race, RaceClass, RaceResult } from "@/lib/supabase/types";
-import { computeRaceMetrics, formatPass, hasRecordedPass, isValidPassInput } from "@/lib/race-results";
-import {
-  Trophy,
-  Plus,
-  Save,
-  Trash2,
-  Edit2,
-  Check,
-  X,
-  AlertCircle,
-  Eye,
-  RefreshCw,
-  Sparkles,
-  ArrowUpDown,
-  Calculator,
-} from "lucide-react";
+import type { Race, RaceClass, RaceResult } from "@/lib/supabase/types";
+import { buildRaceSavePayload, addBlankRows, prepareRaceEditor, type EditableClass, type EditableResult } from "@/lib/race-editor";
+import { computeRaceMetrics, formatPass, hasRecordedPass, isBlankResult } from "@/lib/race-results";
+import { todayAtTrack } from "@/lib/race-schedule";
+import { generateRacePdf } from "@/lib/generate-race-pdf";
+
+async function fetchRaceEditor(raceId: string) {
+  const { data: raceClasses, error: classError } = await supabase.from("classes")
+    .select("*").eq("race_id", raceId).order("order_num", { ascending: true });
+  if (classError) throw classError;
+  const ids = (raceClasses || []).map((cls) => cls.id);
+  const rows: RaceResult[] = [];
+  if (ids.length) {
+    for (let start = 0; ; start += 1000) {
+      const { data, error } = await supabase.from("results").select("*")
+        .in("class_id", ids).order("id").range(start, start + 999);
+      if (error) throw error;
+      rows.push(...(data || []));
+      if (!data || data.length < 1000) break;
+    }
+  }
+  return prepareRaceEditor((raceClasses || []) as RaceClass[], rows);
+}
 
 export default function AdminResultsPage() {
   const [races, setRaces] = useState<Race[]>([]);
-  const [selectedRaceId, setSelectedRaceId] = useState<string>("");
-  const [classes, setClasses] = useState<RaceClass[]>([]);
-  const [selectedClassId, setSelectedClassId] = useState<string>("");
-  const [results, setResults] = useState<RaceResult[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [loadingResults, setLoadingResults] = useState(false);
-
-  // New Pass Entry State
-  const [newName, setNewName] = useState("");
-  const [newPass1, setNewPass1] = useState("");
-  const [newPass2, setNewPass2] = useState("");
-  const [savingPass, setSavingPass] = useState(false);
-
-  // In-line editing state
-  const [editingResultId, setEditingResultId] = useState<string | null>(null);
-  const [editFormData, setEditFormData] = useState<{
-    name: string;
-    first_half: string;
-    second_half: string;
-  }>({
-    name: "",
-    first_half: "",
-    second_half: "",
-  });
-
-  const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
-
-  // 1. Load races on mount
-  const loadRaces = async () => {
-    setLoading(true);
-    try {
-      const { data, error } = await supabase
-        .from("races")
-        .select("*")
-        .order("date", { ascending: false });
-
-      if (data && data.length > 0) {
-        setRaces(data);
-        if (!selectedRaceId) {
-          setSelectedRaceId(data[0].id);
-        }
-      }
-    } catch (err: any) {
-      console.error("Error loading races:", err);
-      setMessage({ type: "error", text: "Failed to load races." });
-    } finally {
-      setLoading(false);
-    }
-  };
+  const [selectedRaceId, setSelectedRaceId] = useState("");
+  const [classes, setClasses] = useState<EditableClass[]>([]);
+  const [staleBlankIds, setStaleBlankIds] = useState<string[]>([]);
+  const [collapsed, setCollapsed] = useState<string[]>([]);
+  const [loadingRaces, setLoadingRaces] = useState(true);
+  const [loadingEditor, setLoadingEditor] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [dirty, setDirty] = useState(false);
+  const [reload, setReload] = useState(0);
+  const [message, setMessage] = useState<{ error: boolean; text: string } | null>(null);
 
   useEffect(() => {
-    loadRaces();
+    let active = true;
+    supabase.from("races").select("*").order("date", { ascending: false })
+      .then(({ data, error }) => {
+        if (!active) return;
+        if (error) {
+          setMessage({ error: true, text: `Could not load races: ${error.message}` });
+          setLoadingEditor(false);
+        }
+        else {
+          const events = data || [];
+          setRaces(events);
+          const today = todayAtTrack();
+          setSelectedRaceId(events.find((race) => race.date <= today)?.id || events.at(-1)?.id || "");
+          if (!events.length) setLoadingEditor(false);
+        }
+        setLoadingRaces(false);
+      });
+    return () => { active = false; };
   }, []);
 
-  // 2. Load classes for the selected race
   useEffect(() => {
     if (!selectedRaceId) return;
-
-    async function loadRaceClasses() {
-      try {
-        const { data, error } = await supabase
-          .from("classes")
-          .select("*")
-          .eq("race_id", selectedRaceId)
-          .order("order_num", { ascending: true });
-
-        if (data) {
-          setClasses(data);
-          if (data.length > 0) {
-            setSelectedClassId(data[0].id);
-          } else {
-            setSelectedClassId("");
-            setResults([]);
-          }
-        }
-      } catch (err) {
-        console.error("Error loading race classes:", err);
-      }
-    }
-
-    loadRaceClasses();
-  }, [selectedRaceId]);
-
-  // 3. Load results for the selected class
-  const loadResults = async () => {
-    if (!selectedClassId) {
-      setResults([]);
-      return;
-    }
-    setLoadingResults(true);
-    try {
-      const { data, error } = await supabase
-        .from("results")
-        .select("*")
-        .eq("class_id", selectedClassId)
-        .order("order_num", { ascending: true });
-
-      if (data) {
-        setResults(data);
-      }
-    } catch (err) {
-      console.error("Error loading results:", err);
-    } finally {
-      setLoadingResults(false);
-    }
-  };
+    let active = true;
+    fetchRaceEditor(selectedRaceId).then(({ classes: loaded, staleBlankIds: blanks }) => {
+      if (!active) return;
+      setClasses(loaded);
+      setStaleBlankIds(blanks);
+      setCollapsed(loaded.slice(1).map((cls) => cls.id));
+      setDirty(false);
+    }).catch((error) => {
+      console.error("Race editor load failed", error);
+      if (active) setMessage({ error: true, text: "Race entries could not be loaded. Try Refresh." });
+    }).finally(() => { if (active) setLoadingEditor(false); });
+    return () => { active = false; };
+  }, [selectedRaceId, reload]);
 
   useEffect(() => {
-    loadResults();
-  }, [selectedClassId]);
+    if (!dirty) return;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty]);
 
-  const newMetrics = computeRaceMetrics(newPass1, newPass2);
-  const editMetrics = computeRaceMetrics(editFormData.first_half, editFormData.second_half);
+  const selectedRace = races.find((race) => race.id === selectedRaceId);
+  const hasPendingChanges = dirty || staleBlankIds.length > 0;
 
-  // Add new contestant pass
-  const handleAddPass = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedClassId || !newName.trim()) return;
-    if (![newPass1, newPass2].every(isValidPassInput)) {
-      setMessage({ type: "error", text: "Use a time, a distance with ft or ', or DQ for each pass." });
-      return;
-    }
-
-    setSavingPass(true);
+  function selectRace(id: string) {
+    if (id === selectedRaceId || saving) return;
+    if (dirty && !confirm("Discard unsaved race entries and switch events?")) return;
+    setClasses([]);
+    setStaleBlankIds([]);
+    setLoadingEditor(true);
     setMessage(null);
+    setDirty(false);
+    setSelectedRaceId(id);
+  }
 
-    try {
-      const nextOrder = (results.length > 0 ? Math.max(...results.map((r) => r.order_num || 0)) : 0) + 1;
-      const metrics = computeRaceMetrics(newPass1, newPass2);
-      const { data, error } = await supabase
-        .from("results")
-        .insert({
-          class_id: selectedClassId,
-          order_num: nextOrder,
-          name: newName.trim(),
-          first_half: newPass1.trim() || null,
-          second_half: newPass2.trim() || null,
-          fastest: metrics.fastest,
-          consistency: metrics.consistency,
-        })
-        .select()
-        .single();
+  function changeClass(id: string, patch: Partial<Pick<EditableClass, "name" | "display_mode">>) {
+    setClasses((previous) => previous.map((cls) => cls.id === id ? { ...cls, ...patch } : cls));
+    setDirty(true);
+  }
 
-      if (error) throw error;
+  function changeRow(classId: string, rowId: string, field: "name" | "first_half" | "second_half", value: string) {
+    setClasses((previous) => previous.map((cls) => cls.id !== classId ? cls : {
+      ...cls,
+      results: cls.results.map((row) => {
+        if (row.id !== rowId) return row;
+        const next = { ...row, [field]: value } as EditableResult;
+        if (field !== "name") Object.assign(next, computeRaceMetrics(next.first_half, next.second_half));
+        return next;
+      }),
+    }));
+    setDirty(true);
+    setMessage(null);
+  }
 
-      if (data) {
-        setResults((prev) => [...prev, data]);
-      }
-
-      // Reset form
-      setNewName("");
-      setNewPass1("");
-      setNewPass2("");
-      setMessage({ type: "success", text: "Pass logged successfully!" });
-    } catch (err: any) {
-      console.error("Error logging pass:", err);
-      setMessage({ type: "error", text: err.message || "Failed to log pass." });
-    } finally {
-      setSavingPass(false);
-    }
-  };
-
-  // Start inline editing
-  const startEdit = (result: RaceResult) => {
-    setEditingResultId(result.id);
-    setEditFormData({
-      name: result.name || "",
-      first_half: result.first_half || "",
-      second_half: result.second_half || "",
+  function moveClass(index: number, direction: -1 | 1) {
+    const target = index + direction;
+    if (target < 0 || target >= classes.length) return;
+    setClasses((previous) => {
+      const next = [...previous];
+      [next[index], next[target]] = [next[target], next[index]];
+      return next;
     });
-  };
+    setDirty(true);
+  }
 
-  // Save inline edit
-  const saveInlineEdit = async (resultId: string) => {
-    if (![editFormData.first_half, editFormData.second_half].every(isValidPassInput)) {
-      setMessage({ type: "error", text: "Use a time, a distance with ft or ', or DQ for each pass." });
+  async function saveAll() {
+    if (!selectedRace || !hasPendingChanges || saving) return;
+    let payload: ReturnType<typeof buildRaceSavePayload>;
+    try {
+      payload = buildRaceSavePayload(classes, staleBlankIds);
+    } catch (error) {
+      setMessage({ error: true, text: error instanceof Error ? error.message : "Check the race entries." });
       return;
     }
+    setSaving(true);
+    setMessage(null);
     try {
-      const metrics = computeRaceMetrics(editFormData.first_half, editFormData.second_half);
-
-      const { error } = await supabase
-        .from("results")
-        .update({
-          name: editFormData.name.trim() || null,
-          first_half: editFormData.first_half.trim() || null,
-          second_half: editFormData.second_half.trim() || null,
-          fastest: metrics.fastest,
-          consistency: metrics.consistency,
-        })
-        .eq("id", resultId);
-
-      if (error) throw error;
-
-      setResults((prev) =>
-        prev.map((r) =>
-          r.id === resultId
-            ? {
-                ...r,
-                name: editFormData.name,
-                first_half: editFormData.first_half,
-                second_half: editFormData.second_half,
-                fastest: metrics.fastest,
-                consistency: metrics.consistency,
-              }
-            : r
-        )
-      );
-
-      setEditingResultId(null);
-      setMessage({ type: "success", text: "Pass updated!" });
-    } catch (err: any) {
-      alert(`Error updating pass: ${err.message}`);
-    }
-  };
-
-  // Delete pass
-  const handleDeletePass = async (resultId: string, contestantName: string | null) => {
-    if (!confirm(`Delete pass for contestant "${contestantName || "Entry"}"?`)) return;
-
-    try {
-      const { error } = await supabase.from("results").delete().eq("id", resultId);
-      if (error) throw error;
-      setResults((prev) => prev.filter((r) => r.id !== resultId));
-      setMessage({ type: "success", text: "Pass removed." });
-    } catch (err: any) {
-      alert(`Error deleting pass: ${err.message}`);
-    }
-  };
-
-  // Toggle race published state
-  const handleTogglePublished = async () => {
-    const currentRace = races.find((r) => r.id === selectedRaceId);
-    if (!currentRace) return;
-
-    const newPublished = !currentRace.published;
-    if (newPublished) {
-      const { data: raceClasses, error: classError } = await supabase.from("classes").select("id").eq("race_id", selectedRaceId);
-      if (classError) { setMessage({ type: "error", text: classError.message }); return; }
-      if (!raceClasses?.length) { setMessage({ type: "error", text: "Add running classes and results before publishing." }); return; }
-      let hasEntry = false;
-      for (let start = 0; !hasEntry; start += 1000) {
-        const { data: entries, error: entriesError } = await supabase.from("results")
-          .select("id, name, first_half, second_half")
-          .in("class_id", raceClasses.map((item) => item.id)).order("id").range(start, start + 999);
-        if (entriesError) { setMessage({ type: "error", text: entriesError.message }); return; }
-        hasEntry = !!entries?.some(hasRecordedPass);
-        if (!entries || entries.length < 1000) break;
+      if (payload.classPayload.length) {
+        const { error } = await supabase.from("classes").upsert(payload.classPayload, { onConflict: "id" });
+        if (error) throw error;
       }
-      if (!hasEntry) {
-        setMessage({ type: "error", text: "There are no completed result entries to publish." });
-        return;
+      for (let start = 0; start < payload.resultPayload.length; start += 100) {
+        const { error } = await supabase.from("results")
+          .upsert(payload.resultPayload.slice(start, start + 100), { onConflict: "id" });
+        if (error) throw error;
       }
-      if (!confirm(`Publish results for ${currentRace.name}? The public site will show these entries immediately.`)) return;
+      for (let start = 0; start < payload.deleteIds.length; start += 100) {
+        const { error } = await supabase.from("results").delete().in("id", payload.deleteIds.slice(start, start + 100));
+        if (error) throw error;
+      }
+      setMessage({ error: false, text: `Saved ${payload.resultPayload.length} entries${selectedRace.published ? "; published results will refresh shortly." : " as a draft."}` });
+      setLoadingEditor(true);
+      setReload((value) => value + 1);
+    } catch (error) {
+      console.error("Race save failed", error);
+      setMessage({ error: true, text: "Save stopped after a database error. Refresh to inspect what was saved before retrying." });
+    } finally {
+      setSaving(false);
     }
+  }
+
+  async function togglePublished() {
+    if (!selectedRace || saving) return;
+    if (dirty) {
+      setMessage({ error: true, text: "Save the race entries before changing publication." });
+      return;
+    }
+    const published = !selectedRace.published;
+    if (published && !classes.some((cls) => cls.results.some(hasRecordedPass))) {
+      setMessage({ error: true, text: "Record at least one named pass before publishing." });
+      return;
+    }
+    if (published && !confirm(`Publish ${selectedRace.name}? Its saved entries will be visible on the public results page.`)) return;
     try {
-      const { error } = await supabase
-        .from("races")
-        .update({ published: newPublished })
-        .eq("id", selectedRaceId);
-
+      const { error } = await supabase.from("races").update({ published }).eq("id", selectedRace.id);
       if (error) throw error;
-
-      setRaces((prev) =>
-        prev.map((r) => (r.id === selectedRaceId ? { ...r, published: newPublished } : r))
-      );
-      setMessage({
-        type: "success",
-        text: `Race results are now ${newPublished ? "PUBLISHED on public site" : "set to DRAFT (hidden)"}.`,
-      });
-    } catch (err: any) {
-      alert(`Error updating publication state: ${err.message}`);
+      setRaces((previous) => previous.map((race) => race.id === selectedRace.id ? { ...race, published } : race));
+      setMessage({ error: false, text: published ? "Results are published. Further saved passes will appear on the public page." : "Results are hidden from the public page." });
+    } catch (error) {
+      console.error("Publication failed", error);
+      setMessage({ error: true, text: "Publication could not be updated." });
     }
-  };
+  }
 
-  const selectedRace = races.find((r) => r.id === selectedRaceId);
-  const selectedClass = classes.find((c) => c.id === selectedClassId);
+  function refresh() {
+    if (dirty && !confirm("Discard unsaved entries and reload this race?")) return;
+    setLoadingEditor(true);
+    setMessage(null);
+    setReload((value) => value + 1);
+  }
 
-  return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-black tracking-tight" style={{ color: "var(--foreground)" }}>
-            Log Contestant Passes &amp; Times
-          </h1>
-          <p className="text-xs sm:text-sm mt-1" style={{ color: "var(--muted-fg)" }}>
-            Record official 1st pass, 2nd pass, fastest runs, and consistency calculations for each driver.
-          </p>
-        </div>
-
-        {selectedRace && (
-          <button
-            onClick={handleTogglePublished}
-            className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
-              selectedRace.published
-                ? "bg-emerald-600 text-white hover:bg-emerald-700"
-                : "bg-amber-600 text-white hover:bg-amber-700"
-            }`}
-          >
-            {selectedRace.published ? "🟢 Published on Live Site" : "⚪ Results in Draft (Click to Publish)"}
-          </button>
-        )}
+  return <div className="space-y-6">
+    <header className="flex flex-wrap items-start justify-between gap-4">
+      <div>
+        <h1 className="text-2xl font-black">Live Race Results</h1>
+        <p className="text-sm mt-1" style={{ color: "var(--muted-fg)" }}>
+          Enter passes across every class during the race. Blank rows stay in this editor and are not saved.
+        </p>
       </div>
-
-      {message && (
-        <div
-          className={`p-3 rounded-xl border text-xs flex items-center gap-2 ${
-            message.type === "success"
-              ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400"
-              : "bg-red-500/10 border-red-500/20 text-red-600 dark:text-red-400"
-          }`}
-        >
-          <AlertCircle className="w-4 h-4 shrink-0" />
-          <span>{message.text}</span>
-        </div>
-      )}
-
-      {/* Selectors Bar */}
-      <div
-        className="rounded-2xl border p-4 grid sm:grid-cols-2 gap-4 shadow-xs"
-        style={{ background: "var(--surface)", borderColor: "var(--border)" }}
-      >
-        <div>
-          <label className="block text-[11px] font-bold uppercase tracking-wider mb-1 text-amber-600">
-            1. Select Race Night
-          </label>
-          <select
-            value={selectedRaceId}
-            onChange={(e) => setSelectedRaceId(e.target.value)}
-            className="w-full px-3 py-2 rounded-xl border text-sm font-semibold outline-none focus:border-amber-600 cursor-pointer"
-            style={{ background: "var(--muted)", borderColor: "var(--border)", color: "var(--foreground)" }}
-          >
-            {races.map((r) => (
-              <option key={r.id} value={r.id}>
-                {r.name} Race — {r.date} {r.published ? "(Published)" : "(Draft)"}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div>
-          <label className="block text-[11px] font-bold uppercase tracking-wider mb-1 text-amber-600">
-            2. Select Class to Score
-          </label>
-          <select
-            value={selectedClassId}
-            onChange={(e) => setSelectedClassId(e.target.value)}
-            disabled={classes.length === 0}
-            className="w-full px-3 py-2 rounded-xl border text-sm font-semibold outline-none focus:border-amber-600 cursor-pointer disabled:opacity-50"
-            style={{ background: "var(--muted)", borderColor: "var(--border)", color: "var(--foreground)" }}
-          >
-            {classes.length === 0 ? (
-              <option>No classes assigned to this race night</option>
-            ) : (
-              classes.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name} (Scoring: {c.display_mode})
-                </option>
-              ))
-            )}
-          </select>
-        </div>
+      <div className="flex flex-wrap gap-2">
+        <button type="button" onClick={refresh} disabled={!selectedRaceId || loadingEditor || saving}
+          className="rounded-lg border px-3 py-2 text-sm font-bold disabled:opacity-50 inline-flex items-center gap-2" style={{ borderColor: "var(--border)" }}>
+          <RefreshCw className="w-4 h-4" /> Refresh
+        </button>
+        <button type="button" onClick={() => selectedRace && generateRacePdf(selectedRace, classes).catch((error) => {
+          console.error("PDF export failed", error);
+          setMessage({ error: true, text: "PDF could not be generated." });
+        })} disabled={!selectedRace || loadingEditor || saving || !classes.length}
+          className="rounded-lg border px-3 py-2 text-sm font-bold disabled:opacity-50 inline-flex items-center gap-2" style={{ borderColor: "var(--border)" }}>
+          <FileDown className="w-4 h-4" /> Export PDF
+        </button>
+        <button type="button" onClick={saveAll} disabled={!hasPendingChanges || !selectedRace || loadingEditor || saving}
+          className="rounded-lg px-4 py-2 text-sm font-bold disabled:opacity-50 inline-flex items-center gap-2"
+          style={{ background: "var(--primary)", color: "var(--primary-fg)" }}>
+          <Save className="w-4 h-4" /> {saving ? "Saving..." : "Save All"}
+        </button>
       </div>
+    </header>
 
-      {/* Add Pass Form */}
-      {selectedClassId ? (
-        <div
-          className="rounded-2xl border p-5 shadow-xs"
-          style={{ background: "var(--surface)", borderColor: "var(--border)" }}
-        >
-          <div className="flex items-center gap-2 mb-4">
-            <Trophy className="w-4 h-4 text-amber-600" />
-            <h2 className="font-black text-sm" style={{ color: "var(--foreground)" }}>
-              Log New Contestant Pass — {selectedClass?.name}
-            </h2>
-          </div>
-
-          <form onSubmit={handleAddPass} className="space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-5 gap-3">
-              <div className="sm:col-span-2">
-                <label className="block text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: "var(--muted-fg)" }}>
-                  Driver / Contestant Name *
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. John Doe / Truck #44"
-                  value={newName}
-                  onChange={(e) => setNewName(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl border text-xs outline-none focus:border-amber-600"
-                  style={{ background: "var(--muted)", borderColor: "var(--border)", color: "var(--foreground)" }}
-                />
-              </div>
-
-              <div>
-                <label className="block text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: "var(--muted-fg)" }}>
-                  1st Pass Time / Dist
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. 14.280 or 108.9'"
-                  value={newPass1}
-                  onChange={(e) => setNewPass1(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl border text-xs font-mono outline-none focus:border-amber-600"
-                  style={{ background: "var(--muted)", borderColor: "var(--border)", color: "var(--foreground)" }}
-                />
-              </div>
-
-              <div>
-                <label className="block text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: "var(--muted-fg)" }}>
-                  2nd Pass Time / Dist
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. 13.910 or 77'"
-                  value={newPass2}
-                  onChange={(e) => setNewPass2(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl border text-xs font-mono outline-none focus:border-amber-600"
-                  style={{ background: "var(--muted)", borderColor: "var(--border)", color: "var(--foreground)" }}
-                />
-              </div>
-
-              <div>
-                <label className="block text-[10px] font-bold uppercase tracking-wider mb-1 text-amber-600">
-                  Best Pass
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. 13.910"
-                  value={newMetrics.fastest || ""}
-                  readOnly
-                  className="w-full px-3 py-2 rounded-xl border text-xs font-mono font-bold outline-none focus:border-amber-600"
-                  style={{ background: "rgba(180,83,9,0.08)", borderColor: "var(--border)", color: "var(--foreground)" }}
-                />
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between gap-4 pt-1">
-              <div className="flex items-center gap-2">
-                <span className="text-xs" style={{ color: "var(--muted-fg)" }}>
-                  Consistency Diff:
-                </span>
-                <input
-                  type="number"
-                  step="0.001"
-                  placeholder="±0.000"
-                  value={newMetrics.consistency ?? ""}
-                  readOnly
-                  className="w-24 px-2 py-1 rounded-lg border text-xs font-mono outline-none"
-                  style={{ background: "var(--muted)", borderColor: "var(--border)", color: "var(--foreground)" }}
-                />
-                <span className="text-[10px]" style={{ color: "var(--muted-fg)" }}>(Auto-computed for time runs)</span>
-              </div>
-
-              <button
-                type="submit"
-                disabled={savingPass}
-                className="px-5 py-2.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all hover:scale-105 cursor-pointer disabled:opacity-50"
-                style={{ background: "var(--primary)", color: "var(--primary-fg)" }}
-              >
-                <Plus className="w-3.5 h-3.5" /> {savingPass ? "Logging..." : "Save Contestant Pass"}
-              </button>
-            </div>
-          </form>
-        </div>
-      ) : (
-        <div
-          className="rounded-2xl border p-8 text-center"
-          style={{ background: "var(--muted)", borderColor: "var(--border)", color: "var(--muted-fg)" }}
-        >
-          No classes selected for this race. Go to the <strong className="text-amber-600">Race Nights</strong> page to select running classes.
-        </div>
-      )}
-
-      {/* Results Table for Selected Class */}
-      {selectedClassId && (
-        <div
-          className="rounded-2xl border overflow-hidden shadow-sm"
-          style={{ background: "var(--surface)", borderColor: "var(--border)" }}
-        >
-          <div
-            className="p-4 border-b flex items-center justify-between"
-            style={{ borderColor: "var(--border)", background: "var(--muted)" }}
-          >
-            <div>
-              <h3 className="font-black text-sm" style={{ color: "var(--foreground)" }}>
-                Logged Passes for {selectedClass?.name} ({results.length} Drivers)
-              </h3>
-              <p className="text-[11px]" style={{ color: "var(--muted-fg)" }}>
-                Click edit to modify pass times or delete to remove.
-              </p>
-            </div>
-            <button
-              onClick={loadResults}
-              className="p-1.5 rounded-lg border hover:bg-black/5 dark:hover:bg-white/5"
-              style={{ borderColor: "var(--border)", color: "var(--muted-fg)" }}
-              title="Refresh passes"
-            >
-              <RefreshCw className="w-3.5 h-3.5" />
-            </button>
-          </div>
-
-          {loadingResults ? (
-            <div className="py-12 text-center text-xs" style={{ color: "var(--muted-fg)" }}>
-              Loading passes...
-            </div>
-          ) : results.length === 0 ? (
-            <div className="py-12 text-center text-xs" style={{ color: "var(--muted-fg)" }}>
-              No passes logged yet for this class. Use the entry form above to log passes.
-            </div>
-          ) : (
-            <div className="divide-y" style={{ borderColor: "var(--border)" }}>
-              {/* Header row */}
-              <div
-                className="grid gap-2 px-4 py-2.5 text-[10px] font-bold uppercase tracking-wider"
-                style={{
-                  color: "var(--muted-fg)",
-                  gridTemplateColumns: "40px 1.5fr 1fr 1fr 1fr 1fr 80px",
-                }}
-              >
-                <span>#</span>
-                <span>Driver</span>
-                <span className="text-right">Pass 1</span>
-                <span className="text-right">Pass 2</span>
-                <span className="text-right text-amber-600">Best Pass</span>
-                <span className="text-right">Consistency</span>
-                <span className="text-right">Actions</span>
-              </div>
-
-              {/* Data rows */}
-              {results.map((res, idx) => {
-                const isEditing = editingResultId === res.id;
-
-                if (isEditing) {
-                  return (
-                    <div
-                      key={res.id}
-                      className="p-3 bg-amber-500/10 grid gap-2 items-center"
-                      style={{ gridTemplateColumns: "40px 1.5fr 1fr 1fr 1fr 1fr 80px" }}
-                    >
-                      <span className="text-xs font-bold text-center">#{idx + 1}</span>
-                      <input
-                        type="text"
-                        value={editFormData.name}
-                        onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
-                        className="px-2 py-1 rounded border text-xs outline-none"
-                        style={{ background: "var(--surface)", borderColor: "var(--border)" }}
-                      />
-                      <input
-                        type="text"
-                        value={editFormData.first_half}
-                        onChange={(e) => setEditFormData({ ...editFormData, first_half: e.target.value })}
-                        className="px-2 py-1 rounded border text-xs font-mono text-right outline-none"
-                        style={{ background: "var(--surface)", borderColor: "var(--border)" }}
-                      />
-                      <input
-                        type="text"
-                        value={editFormData.second_half}
-                        onChange={(e) => setEditFormData({ ...editFormData, second_half: e.target.value })}
-                        className="px-2 py-1 rounded border text-xs font-mono text-right outline-none"
-                        style={{ background: "var(--surface)", borderColor: "var(--border)" }}
-                      />
-                      <input
-                        type="text"
-                        value={editMetrics.fastest || ""}
-                        readOnly
-                        className="px-2 py-1 rounded border text-xs font-mono font-bold text-right outline-none"
-                        style={{ background: "var(--surface)", borderColor: "var(--border)" }}
-                      />
-                      <input
-                        type="text"
-                        value={editMetrics.consistency ?? ""}
-                        readOnly
-                        className="px-2 py-1 rounded border text-xs font-mono text-right outline-none"
-                        style={{ background: "var(--surface)", borderColor: "var(--border)" }}
-                      />
-                      <div className="flex items-center justify-end gap-1">
-                        <button
-                          onClick={() => saveInlineEdit(res.id)}
-                          className="p-1.5 rounded bg-emerald-600 text-white"
-                          title="Save"
-                        >
-                          <Check className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          onClick={() => setEditingResultId(null)}
-                          className="p-1.5 rounded border"
-                          style={{ borderColor: "var(--border)" }}
-                          title="Cancel"
-                        >
-                          <X className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                  );
-                }
-
-                return (
-                  <div
-                    key={res.id}
-                    className="grid gap-2 px-4 py-3 items-center hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
-                    style={{ gridTemplateColumns: "40px 1.5fr 1fr 1fr 1fr 1fr 80px" }}
-                  >
-                    <span className="text-xs font-bold text-amber-600">#{idx + 1}</span>
-                    <span className="font-bold text-xs" style={{ color: "var(--foreground)" }}>
-                      {res.name || "Unnamed Driver"}
-                    </span>
-                    <span className="text-right text-xs font-mono" style={{ color: "var(--muted-fg)" }}>
-                      {formatPass(res.first_half)}
-                    </span>
-                    <span className="text-right text-xs font-mono" style={{ color: "var(--muted-fg)" }}>
-                      {formatPass(res.second_half)}
-                    </span>
-                    <span className="text-right text-xs font-mono font-black text-amber-600">
-                      {formatPass(res.fastest)}
-                    </span>
-                    <span className="text-right text-xs font-mono" style={{ color: "var(--muted-fg)" }}>
-                      {res.consistency !== null ? `±${res.consistency}s` : "—"}
-                    </span>
-                    <div className="flex items-center justify-end gap-1">
-                      <button
-                        onClick={() => startEdit(res)}
-                        className="p-1.5 rounded-lg border hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer"
-                        style={{ borderColor: "var(--border)" }}
-                        title="Edit pass"
-                      >
-                        <Edit2 className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        onClick={() => handleDeletePass(res.id, res.name)}
-                        className="p-1.5 rounded-lg border text-red-600 hover:bg-red-500/10 cursor-pointer"
-                        style={{ borderColor: "var(--border)" }}
-                        title="Delete pass"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      )}
+    <div className="rounded-2xl border p-4 flex flex-wrap items-end justify-between gap-4" style={{ background: "var(--surface)", borderColor: "var(--border)" }}>
+      <label className="font-bold text-sm flex-1 min-w-[230px]">Race night
+        <select value={selectedRaceId} onChange={(event) => selectRace(event.target.value)} disabled={loadingRaces || saving}
+          className="block mt-1 w-full rounded-lg border px-3 py-2" style={{ background: "var(--muted)", borderColor: "var(--border)" }}>
+          {!selectedRaceId && <option value="">Select a race</option>}
+          {races.map((race) => <option key={race.id} value={race.id}>{race.date} · {race.name} {race.published ? "(Published)" : "(Draft)"}</option>)}
+        </select>
+      </label>
+      <button type="button" onClick={togglePublished} disabled={!selectedRace || loadingEditor || saving}
+        className="rounded-lg border px-4 py-2 text-sm font-bold disabled:opacity-50"
+        style={{ borderColor: selectedRace?.published ? "#16a34a" : "var(--border)" }}>
+        {selectedRace?.published ? "Published · Hide Results" : "Draft · Publish Results"}
+      </button>
     </div>
-  );
+
+    <p className="text-sm" role="status" style={{ color: hasPendingChanges ? "var(--primary)" : "var(--muted-fg)" }}>
+      {dirty ? "Unsaved changes. Save All after entering passes to update published results."
+        : staleBlankIds.length ? "Stored empty rows can be cleaned with Save All." : "All changes saved."}
+    </p>
+    {message && <p role={message.error ? "alert" : "status"} className="rounded-lg border p-3 text-sm"
+      style={{ borderColor: message.error ? "#dc2626" : "#16a34a" }}>{message.text}</p>}
+
+    {loadingRaces || loadingEditor ? <p>Loading race entries...</p> : !selectedRace ? <p>No races are available yet. Create one in Race Nights.</p> : classes.length === 0 ?
+      <div className="rounded-xl border p-6" style={{ borderColor: "var(--border)" }}>
+        This race has no classes. <Link href="/admin/races" className="font-bold underline" style={{ color: "var(--primary)" }}>Add active classes in Race Nights</Link>.
+      </div> : <div className="space-y-5">
+        <p className="text-sm" style={{ color: "var(--muted-fg)" }}>
+          Each class starts with 20 editable rows. Use +5 to make room for more drivers. Manage the class roster in <Link href="/admin/races" className="underline">Race Nights</Link>.
+        </p>
+        <fieldset disabled={saving} className="space-y-5">
+          {classes.map((cls, classIndex) => {
+            const closed = collapsed.includes(cls.id);
+            const filled = cls.results.filter((row) => !isBlankResult(row)).length;
+            return <section key={cls.id} className="rounded-2xl border overflow-hidden" style={{ background: "var(--surface)", borderColor: "var(--border)" }}>
+              <div className="flex flex-wrap items-center justify-between gap-3 p-4" style={{ background: "var(--muted)" }}>
+                <button type="button" onClick={() => setCollapsed((previous) => closed ? previous.filter((id) => id !== cls.id) : [...previous, cls.id])}
+                  className="flex items-center gap-2 font-black text-left">
+                  {closed ? <ChevronDown className="w-5 h-5" /> : <ChevronUp className="w-5 h-5" />}
+                  <span>{classIndex + 1}. {cls.name} <span className="text-xs font-normal">({filled} entered)</span></span>
+                </button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button type="button" aria-label={`Move ${cls.name} up`} title="Move class up" disabled={classIndex === 0}
+                    onClick={() => moveClass(classIndex, -1)} className="p-2 rounded border disabled:opacity-30" style={{ borderColor: "var(--border)" }}><ArrowUp className="w-4 h-4" /></button>
+                  <button type="button" aria-label={`Move ${cls.name} down`} title="Move class down" disabled={classIndex === classes.length - 1}
+                    onClick={() => moveClass(classIndex, 1)} className="p-2 rounded border disabled:opacity-30" style={{ borderColor: "var(--border)" }}><ArrowDown className="w-4 h-4" /></button>
+                  <select aria-label={`Scoring mode for ${cls.name}`} value={cls.display_mode} onChange={(event) => changeClass(cls.id, { display_mode: event.target.value })}
+                    className="rounded border px-2 py-1 text-sm" style={{ background: "var(--surface)", borderColor: "var(--border)" }}>
+                    <option value="fastest">Best Pass</option><option value="consistency">Consistency</option><option value="both">Both</option>
+                  </select>
+                  <button type="button" onClick={() => { setClasses((previous) => previous.map((item) => item.id === cls.id ? addBlankRows(item, 5) : item)); setDirty(true); }}
+                    className="rounded border px-2 py-1 text-sm font-bold inline-flex items-center gap-1" style={{ borderColor: "var(--border)" }}>
+                    <Plus className="w-4 h-4" /> 5 rows
+                  </button>
+                </div>
+              </div>
+              {!closed && <div className="p-4">
+                <label className="block text-xs font-bold mb-3">Race class name
+                  <input value={cls.name} onChange={(event) => changeClass(cls.id, { name: event.target.value })}
+                    className="block mt-1 rounded border px-3 py-2 w-full max-w-sm" style={{ background: "var(--muted)", borderColor: "var(--border)" }} />
+                </label>
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[760px] text-sm">
+                    <thead><tr className="text-left" style={{ color: "var(--muted-fg)" }}>
+                      <th className="p-2 w-10">#</th><th className="p-2">Racer / Driver</th>
+                      <th className="p-2">1st Pass</th><th className="p-2">2nd Pass</th>
+                      <th className="p-2">Best Pass</th><th className="p-2">Consistency</th>
+                    </tr></thead>
+                    <tbody>{cls.results.map((row, rowIndex) => <tr key={row.id} className="border-t" style={{ borderColor: "var(--border)" }}>
+                      <td className="p-2" style={{ color: "var(--muted-fg)" }}>{rowIndex + 1}</td>
+                      {(["name", "first_half", "second_half"] as const).map((field) => <td key={field} className="p-1">
+                        <input value={row[field] || ""} onChange={(event) => changeRow(cls.id, row.id, field, event.target.value)}
+                          aria-label={`${cls.name} row ${rowIndex + 1} ${field === "name" ? "racer" : field === "first_half" ? "first pass" : "second pass"}`}
+                          placeholder={field === "name" ? "Name" : "Time, ft, or DQ"}
+                          className="w-full rounded border px-2 py-2 font-mono" style={{ background: "var(--surface)", borderColor: "var(--border)" }} />
+                      </td>)}
+                      <td className="p-2 font-mono font-bold">{formatPass(row.fastest)}</td>
+                      <td className="p-2 font-mono">{row.consistency == null ? "—" : Number(row.consistency).toFixed(3)}</td>
+                    </tr>)}</tbody>
+                  </table>
+                </div>
+              </div>}
+            </section>;
+          })}
+        </fieldset>
+        <button type="button" onClick={saveAll} disabled={!hasPendingChanges || saving} className="rounded-lg px-5 py-3 font-bold disabled:opacity-50 inline-flex items-center gap-2"
+          style={{ background: "var(--primary)", color: "var(--primary-fg)" }}>
+          <Trophy className="w-4 h-4" /> {saving ? "Saving..." : "Save All Race Results"}
+        </button>
+      </div>}
+  </div>;
 }
