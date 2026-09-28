@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/components/ThemeProvider";
@@ -23,6 +23,11 @@ export const metadata: Metadata = {
     icon: [{ url: "/ldmbfav.png", type: "image/png", sizes: "1024x1024" }],
     apple: [{ url: "/ldmbfav.png", type: "image/png", sizes: "1024x1024" }],
   },
+  appleWebApp: {
+    capable: true,
+    title: "Little Doo",
+    statusBarStyle: "default",
+  },
   openGraph: {
     title: "Little Doo Mud Bog",
     description: "Family-friendly mud racing in Newport, North Carolina.",
@@ -31,6 +36,10 @@ export const metadata: Metadata = {
     locale: "en_US",
     type: "website",
   },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#d97706",
 };
 
 export default function RootLayout({
