@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
-import { motion, useScroll, useTransform } from "framer-motion";
+import { motion, useReducedMotion, useScroll, useTransform } from "framer-motion";
+import Image from "next/image";
 import Link from "next/link";
 import { Calendar, MapPin, ChevronRight, Trophy, Users, Truck, ShieldCheck, Flag } from "lucide-react";
 import { AnimateIn } from "@/components/AnimateIn";
@@ -9,6 +10,7 @@ import { CountdownTimer } from "@/components/CountdownTimer";
 import { supabase } from "@/lib/supabase/client";
 import { Race, ClassCatalog } from "@/lib/supabase/types";
 import { isNextRace, raceStartIso } from "@/lib/race-schedule";
+import heroPhoto from "../../public/bad-company-hero.jpg";
 
 const fallbackStats = [
   { label: "Track Length", value: "200 ft", icon: "📏" },
@@ -19,14 +21,14 @@ const fallbackStats = [
 export default function HomePage() {
   const [upcomingRaces, setUpcomingRaces] = useState<Race[]>([]);
   const [activeCatalog, setActiveCatalog] = useState<ClassCatalog[]>([]);
-  const [loading, setLoading] = useState(true);
+  const reduceMotion = useReducedMotion();
 
   const heroRef = useRef<HTMLDivElement>(null);
   const { scrollYProgress } = useScroll({
     target: heroRef,
     offset: ["start start", "end start"],
   });
-  const bgY = useTransform(scrollYProgress, [0, 1], ["0%", "40%"]);
+  const bgY = useTransform(scrollYProgress, [0, 1], ["0%", "10%"]);
   const textY = useTransform(scrollYProgress, [0, 1], ["0%", "20%"]);
   const opacity = useTransform(scrollYProgress, [0, 0.8], [1, 0]);
 
@@ -54,8 +56,6 @@ export default function HomePage() {
         }
       } catch (err) {
         console.error("Error loading home data:", err);
-      } finally {
-        setLoading(false);
       }
     }
     loadData();
@@ -72,38 +72,29 @@ export default function HomePage() {
         className="relative h-[90vh] min-h-[600px] overflow-hidden grain-overlay"
         style={{ background: "#0C0A07" }}
       >
-        {/* Background image with parallax */}
-        <motion.div className="absolute inset-0" style={{ y: bgY }}>
-          {/* Deep earthy gradient with texture */}
-          <div
-            className="absolute inset-0"
-            style={{
-              background:
-                "radial-gradient(ellipse at 30% 60%, #3D2008 0%, #1A0F00 50%, #0C0A07 100%)",
-            }}
+        {/* The original Bad Company photo, with a slow push-in and shallow scroll depth. */}
+        <motion.div className="absolute -inset-y-16 inset-x-0" style={reduceMotion ? undefined : { y: bgY }}>
+          <Image
+            src={heroPhoto}
+            alt="Bad Company racing through the mud at Little Doo Mud Bog"
+            fill
+            sizes="100vw"
+            loading="eager"
+            fetchPriority="high"
+            placeholder="blur"
+            unoptimized
+            className="object-cover object-[43%_center] md:object-center hero-photo-motion"
           />
-          {/* Subtle tire track / mud texture pattern */}
-          <svg
-            className="absolute inset-0 w-full h-full opacity-5"
-            xmlns="http://www.w3.org/2000/svg"
-            preserveAspectRatio="xMidYMid slice"
-          >
-            <defs>
-              <pattern id="tracks" x="0" y="0" width="40" height="60" patternUnits="userSpaceOnUse">
-                <rect x="8" y="0" width="6" height="60" fill="#B45309" rx="1" />
-                <rect x="26" y="0" width="6" height="60" fill="#B45309" rx="1" />
-              </pattern>
-            </defs>
-            <rect width="100%" height="100%" fill="url(#tracks)" />
-          </svg>
         </motion.div>
+        <div className="absolute inset-0 pointer-events-none" aria-hidden="true"
+          style={{ background: "linear-gradient(90deg, rgba(12,10,7,0.83) 0%, rgba(12,10,7,0.67) 50%, rgba(12,10,7,0.58) 100%), linear-gradient(180deg, rgba(12,10,7,0.16), transparent 42%, rgba(12,10,7,0.42))" }} />
 
         {/* Animated mud particles */}
         <div className="absolute inset-0 overflow-hidden pointer-events-none">
           {[...Array(8)].map((_, i) => (
             <div
               key={i}
-              className="absolute w-2 h-2 rounded-full opacity-30"
+              className="absolute w-2 h-2 rounded-full opacity-20 hero-mud-particle"
               style={{
                 background: `hsl(${25 + i * 5}, 60%, ${25 + i * 4}%)`,
                 left: `${10 + i * 12}%`,
@@ -122,10 +113,10 @@ export default function HomePage() {
         {/* Hero content */}
         <motion.div
           className="relative z-10 h-full flex flex-col items-center justify-center text-center px-4"
-          style={{ y: textY, opacity }}
+          style={reduceMotion ? undefined : { y: textY, opacity }}
         >
           <motion.p
-            initial={{ opacity: 0, y: 10 }}
+            initial={reduceMotion ? false : { opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.1 }}
             className="text-xs font-bold uppercase tracking-[0.25em] mb-4 flex items-center gap-2"
@@ -135,10 +126,11 @@ export default function HomePage() {
           </motion.p>
 
           <motion.h1
-            initial={{ opacity: 0, y: 20 }}
+            initial={reduceMotion ? false : { opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.2, duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
             className="text-5xl sm:text-7xl md:text-8xl font-black tracking-tighter text-white leading-none mb-4"
+            style={{ textShadow: "0 4px 28px rgba(0,0,0,0.65)" }}
           >
             LITTLE DOO
             <br />
@@ -146,7 +138,7 @@ export default function HomePage() {
           </motion.h1>
 
           <motion.p
-            initial={{ opacity: 0, y: 16 }}
+            initial={reduceMotion ? false : { opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.35 }}
             className="text-base sm:text-lg max-w-xl mx-auto mb-8"
@@ -156,7 +148,7 @@ export default function HomePage() {
           </motion.p>
 
           <motion.div
-            initial={{ opacity: 0, y: 16 }}
+            initial={reduceMotion ? false : { opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.45 }}
             className="flex flex-col sm:flex-row items-center gap-3"
@@ -183,8 +175,8 @@ export default function HomePage() {
           {/* Scroll indicator */}
           <motion.div
             className="absolute bottom-8 left-1/2 -translate-x-1/2"
-            animate={{ y: [0, 8, 0] }}
-            transition={{ repeat: Infinity, duration: 2 }}
+            animate={reduceMotion ? undefined : { y: [0, 8, 0] }}
+            transition={reduceMotion ? undefined : { repeat: Infinity, duration: 2 }}
           >
             <div
               className="w-6 h-10 rounded-full border-2 flex items-start justify-center pt-2"
