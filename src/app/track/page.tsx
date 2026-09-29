@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
-import { MapPin, Ruler, Phone, Clock, Utensils, ShowerHead } from "lucide-react";
+import { MapPin, Ruler, Phone, Clock, Utensils } from "lucide-react";
 import { AnimateIn } from "@/components/AnimateIn";
+import { LocationMap } from "@/components/LocationMap";
 
 export const metadata: Metadata = {
   title: "Track Info",
@@ -203,17 +204,10 @@ export default function TrackPage() {
               </a>
             </div>
             {/* Embedded map */}
-            <div className="w-full h-72 sm:h-96">
-              <iframe
-                title="Little Doo Mud Bog Location"
-                width="100%"
-                height="100%"
-                frameBorder="0"
-                style={{ border: 0 }}
-                src="https://www.google.com/maps/embed/v1/place?key=AIzaSyBFw0Qbyq9zTFTd-tUY6dZWTgaQzuU3s_o&q=759+Tom+Mann+Rd+Newport+NC+28570"
-                allowFullScreen
-              />
-            </div>
+            <LocationMap className="block w-full h-72 sm:h-96" />
+            <p className="px-5 py-3 text-xs" style={{ color: "var(--muted-fg)" }}>
+              The track is across the road from the address shown on the map.
+            </p>
           </div>
         </section>
       </AnimateIn>
