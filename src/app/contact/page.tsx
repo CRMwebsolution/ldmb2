@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { AnimateIn } from "@/components/AnimateIn";
+import { LocationMap } from "@/components/LocationMap";
 import { MapPin, Phone, Clock, ExternalLink, Send } from "lucide-react";
 
 export default function ContactPage() {
@@ -289,15 +290,10 @@ export default function ContactPage() {
           className="mt-10 rounded-2xl border overflow-hidden"
           style={{ borderColor: "var(--border)" }}
         >
-          <iframe
-            title="Little Doo Mud Bog Map"
-            width="100%"
-            height="320"
-            frameBorder="0"
-            style={{ border: 0 }}
-            src="https://www.google.com/maps/embed/v1/place?key=AIzaSyBFw0Qbyq9zTFTd-tUY6dZWTgaQzuU3s_o&q=759+Tom+Mann+Rd+Newport+NC+28570"
-            allowFullScreen
-          />
+          <LocationMap className="block w-full h-80" />
+          <p className="px-5 py-3 text-xs" style={{ color: "var(--muted-fg)" }}>
+            The track is across the road from the address shown on the map.
+          </p>
         </div>
       </AnimateIn>
     </div>
