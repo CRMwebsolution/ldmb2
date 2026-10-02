@@ -16,6 +16,7 @@ const fallbackStats = [
   { label: "Track Length", value: "200 ft", icon: "📏" },
   { label: "Active Classes", value: "—", icon: "🏎️" },
   { label: "Season", value: "Feb–Dec", icon: "🗓️" },
+  { label: "Racing Starts", value: "4 PM", icon: "🏁" },
 ];
 
 export default function HomePage() {
