@@ -211,3 +211,23 @@
 - Added a focused test for tracked-versus-clean results URLs.
 - Local lint and tests were not run because the workspace command runner still fails before PowerShell starts. Connected preview build verification is pending for this push.
 - No merge or production application deployment was performed. The database migrations were applied to the LDMB Supabase project `shxpqufymaxwvwamlmmz`.
+
+## 2026-10-12 7:36 PM EDT — Codex
+
+### What it did
+
+- Recorded verification for contestant registration, racer-link guidance, and results QR controls.
+
+### Database changes
+
+- None additional in this verification commit.
+
+### Other relevant changes
+
+- Vercel project `ldmb` completed a successful Preview production build for commit `04982a25adb3ad7a0bd1e7f83dacec37de2b80b2`; the build includes Next.js compilation and TypeScript validation.
+- The duplicate `ldmb2` Vercel project reported `Deployment was blocked`; the active `ldmb` preview built successfully and is Ready.
+- Smoke-tested the preview's public September results page. The Results QR button opened a generated QR image and displayed the clean, campaign-free typed URL beneath it.
+- Confirmed the preview admin navigation contains Contestant Registration and that the route remains protected by the existing admin authentication gate.
+- A live add/edit/remove contestant mutation was not performed because the preview domain did not have an authenticated admin session; no production result rows were created or modified during testing.
+- Local lint and Node tests remain unrun because the workspace command runner still fails before PowerShell starts.
+- No merge or production application deployment was performed.
