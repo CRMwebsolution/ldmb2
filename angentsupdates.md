@@ -122,3 +122,23 @@
 - The preceding branch preview completed a successful Vercel production build and targeted public/privacy/admin-gate smoke checks. This push triggers a fresh preview build for the fixes above.
 - Local lint and Node tests still could not start because the workspace command runner fails before PowerShell launches; they are not claimed as passed.
 - No merge or production deployment was performed.
+
+
+## 2026-10-12 9:36 AM EDT — Codex
+
+### What it did
+
+- Recorded final verification for the combined race-operations and first-party heatmap branch.
+
+### Database changes
+
+- None. Both additive migration files remain unapplied.
+
+### Other relevant changes
+
+- Commit `cdab3d5a7b7b7f029243b4a1458b8741511e4e88` passed both connected Vercel preview production builds.
+- Smoke-tested the updated branch homepage, event/class/results/privacy pages, a published race results page, the new live pit display, and admin authentication gate.
+- Confirmed no first-party analytics ingestion request appeared on admin, contact, gallery, privacy, account, or checkout routes in the browser smoke pass.
+- Checked mobile, tablet, and laptop layouts for the privacy/admin-gate views; the pre-existing homepage animation/container produces a minor roughly 8px mobile horizontal overflow that is outside these features and was not changed.
+- Local ESLint and Node tests could not be executed because the workspace command runner still fails before starting PowerShell. The passing Next.js production build includes TypeScript validation, but no lint or unit-test pass is claimed.
+- No merge, production deployment, or live database migration was performed.
