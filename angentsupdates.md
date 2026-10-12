@@ -167,3 +167,19 @@
 - Post-migration catalog checks confirmed all six analytics tables exist with RLS enabled and zero initial rows.
 - Supabase security-advisor verification confirmed the anonymous SECURITY DEFINER warning introduced by the initial grant is resolved. The remaining signed-in warning is expected because the RPC is deliberately exposed to authenticated race admins and performs its own admin check.
 - No application deployment, branch merge, or production-code release was performed.
+
+## 2026-10-12 6:43 PM EDT — Codex
+
+### What it did
+
+- Aligned the heatmap migration filenames in source control with the exact migration versions recorded by the LDMB Supabase project.
+
+### Database changes
+
+- None additional in this commit.
+- Renamed the source migration files to `20261012224007_first_party_heatmaps.sql` and `20261012224209_lock_down_heatmap_retention_rpc.sql` so future migration tooling recognizes the already-applied production versions instead of replaying them.
+
+### Other relevant changes
+
+- No application code changed.
+- No merge or production application deployment was performed.
