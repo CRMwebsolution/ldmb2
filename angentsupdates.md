@@ -78,3 +78,23 @@
   build is claimed in this entry.
 - No migrations were applied.
 - No merge or production deployment was performed.
+
+
+## 2026-10-12 9:12 AM EDT — Codex
+
+### What it did
+
+- Inspected the authenticated Vercel preview build log.
+- Removed the stale `scrollRatios` destructuring from `HeatmapCanvas` after the scroll heatmap
+  was changed to consume projected visible points.
+
+### Database changes
+
+- None.
+
+### Other relevant changes
+
+- Vercel confirmed that the optimized production bundle compiled successfully; the prior preview
+  stopped only at this TypeScript error. A new preview check was triggered by this push.
+- No migrations were applied.
+- No merge or production deployment was performed.

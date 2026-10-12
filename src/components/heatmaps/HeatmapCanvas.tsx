@@ -27,7 +27,7 @@ function color(value: number): [number, number, number, number] {
 }
 
 export function HeatmapCanvas({
-  width, height, mode, points, scrollRatios, intensity, showPoints,
+  width, height, mode, points, intensity, showPoints,
 }: Props) {
   const ref = useRef<HTMLCanvasElement>(null);
 
