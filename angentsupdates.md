@@ -1,6 +1,6 @@
 # Agent Updates
 
-## 2026-10-12 12:35 AM EDT — Codex
+## 2026-10-12 9:00 AM EDT — Codex
 
 ### What it did
 
@@ -55,4 +55,26 @@
 - Verification status at this push: source was statically reviewed, but local lint, test, and
   production build could not be executed because the workspace command runner failed before
   starting PowerShell. No check is claimed as passed.
+- No merge or production deployment was performed.
+
+
+## 2026-10-12 9:06 AM EDT — Codex
+
+### What it did
+
+- Corrected the Heatmaps admin shell so the standard management sidebar cannot reappear at
+  desktop breakpoints and squeeze the three-column analytics workspace.
+- Changed the CSV utility's runtime scoring import to a relative TypeScript import so the
+  repository's Node test runner can resolve it.
+
+### Database changes
+
+- None.
+
+### Other relevant changes
+
+- The initial Vercel preview checks failed. The connected build-log page requires a separate
+  GitHub/Vercel login, and the local command runner still cannot start PowerShell, so no successful
+  build is claimed in this entry.
+- No migrations were applied.
 - No merge or production deployment was performed.

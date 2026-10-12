@@ -65,7 +65,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         <div className="flex items-center gap-3">
           <button
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="md:hidden p-1.5 rounded-lg border"
+            className={`${isHeatmaps ? "hidden" : "md:hidden"} p-1.5 rounded-lg border`}
             style={{ borderColor: "var(--border)" }}
           >
             {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
@@ -121,7 +121,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       <div className={`flex-1 flex flex-col md:flex-row w-full mx-auto px-4 sm:px-6 py-6 gap-6 ${isHeatmaps ? "max-w-[1920px]" : "max-w-7xl"}`}>
         {/* Sidebar Nav */}
         <aside
-          className={`${isHeatmaps ? "hidden" : "md:w-60 shrink-0"} ${
+          className={isHeatmaps ? "hidden" : `md:w-60 shrink-0 ${
             mobileMenuOpen ? "block" : "hidden md:block"
           }`}
         >

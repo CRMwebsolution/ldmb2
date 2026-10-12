@@ -1,6 +1,6 @@
 import type { Race } from "@/lib/supabase/types";
 import type { EditableClass } from "@/lib/race-editor";
-import { formatPass } from "@/lib/race-results";
+import { formatPass } from "./race-results.ts";
 
 function safeCell(value: unknown) {
   const text = String(value ?? "");
