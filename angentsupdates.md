@@ -142,3 +142,28 @@
 - Checked mobile, tablet, and laptop layouts for the privacy/admin-gate views; the pre-existing homepage animation/container produces a minor roughly 8px mobile horizontal overflow that is outside these features and was not changed.
 - Local ESLint and Node tests could not be executed because the workspace command runner still fails before starting PowerShell. The passing Next.js production build includes TypeScript validation, but no lint or unit-test pass is claimed.
 - No merge, production deployment, or live database migration was performed.
+
+## 2026-10-12 6:42 PM EDT — Codex
+
+### What it did
+
+- Applied the isolated first-party heatmap analytics schema to the production LDMB Supabase project `shxpqufymaxwvwamlmmz`.
+- Verified the created tables, row-level security, admin read policies, service-role write access, indexes, foreign keys, constraints, and retention function.
+- Added a follow-up migration that removes Supabase's automatic anonymous EXECUTE grant from the analytics-retention RPC.
+
+### Database changes
+
+- Applied Supabase migration `20261012224007_first_party_heatmaps`, corresponding to `supabase/migrations/202610120002_first_party_heatmaps.sql`.
+- Created `web_analytics_site_versions`, `web_analytics_sessions`, `web_analytics_pageviews`, `web_analytics_interactions`, `web_analytics_section_views`, and `web_analytics_attention_cells`.
+- Enabled RLS on all six tables; anonymous table access is denied, authenticated reads are limited by the existing `is_current_race_admin()` policy, and server-side writes use `service_role`.
+- Created the analytics filter/lookup indexes and `purge_expired_web_analytics(integer)` retention function.
+- Applied Supabase migration `20261012224209_lock_down_heatmap_retention_rpc`.
+- Added `supabase/migrations/202610120003_lock_down_heatmap_retention_rpc.sql` to source control. The RPC is executable by authenticated users only and still enforces `is_current_race_admin()` internally; anonymous execution is denied.
+- The separate race-operations migration `202610120001_race_operations.sql` was not applied.
+
+### Other relevant changes
+
+- The user added `SUPABASE_SERVICE_ROLE_KEY` to local `.env.local`; its value was not read, printed, or committed.
+- Post-migration catalog checks confirmed all six analytics tables exist with RLS enabled and zero initial rows.
+- Supabase security-advisor verification confirmed the anonymous SECURITY DEFINER warning introduced by the initial grant is resolved. The remaining signed-in warning is expected because the RPC is deliberately exposed to authenticated race admins and performs its own admin check.
+- No application deployment, branch merge, or production-code release was performed.
