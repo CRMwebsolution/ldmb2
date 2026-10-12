@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, ChevronDown, ChevronUp } from "lucide-react";
+import { ArrowLeft, ChevronDown, ChevronUp, MonitorUp } from "lucide-react";
 import { supabase } from "@/lib/supabase/client";
 import type { Race, RaceClass, RaceResult } from "@/lib/supabase/types";
 import { formatPass, formatRaceDate, sortClassResults } from "@/lib/race-results";
@@ -20,6 +20,7 @@ export default function RaceResultsDetail() {
   const [collapsed, setCollapsed] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [realtimeRevision, setRealtimeRevision] = useState(0);
 
   useEffect(() => {
     let active = true;
@@ -83,7 +84,18 @@ export default function RaceResultsDetail() {
       if (document.visibilityState === "visible" && (activeRaceDate === todayAtTrack() || ticks % 6 === 0)) void load();
     }, 5000);
     return () => { active = false; window.clearInterval(interval); };
-  }, [raceId]);
+  }, [raceId, realtimeRevision]);
+
+  useEffect(() => {
+    if (!race?.id) return;
+    const refresh = () => setRealtimeRevision((value) => value + 1);
+    const channel = supabase.channel(`public-race-${race.id}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "races", filter: `id=eq.${race.id}` }, refresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "classes", filter: `race_id=eq.${race.id}` }, refresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "results" }, refresh)
+      .subscribe();
+    return () => { void supabase.removeChannel(channel); };
+  }, [race?.id]);
 
   return <div className="max-w-6xl mx-auto px-4 py-12">
     <Link href="/race-results" className="inline-flex gap-2 items-center text-sm font-bold mb-7" style={{ color: "var(--primary)" }}>
@@ -95,10 +107,15 @@ export default function RaceResultsDetail() {
         <h1 className="text-4xl sm:text-5xl font-black mt-2">{race.name}</h1>
         <p className="mt-2" style={{ color: "var(--muted-fg)" }}>{formatRaceDate(race.date)}</p>
         <p className="mt-1 text-xs" style={{ color: "var(--muted-fg)" }}>Published passes refresh automatically while this page is open, every few seconds on race day.</p>
-        {classes.length > 0 && <button type="button" onClick={() => generateRacePdf(race, classes)}
-          className="mt-4 rounded-lg px-4 py-2 font-bold text-sm" style={{ background: "var(--primary)", color: "var(--primary-fg)" }}>
-          Download Official PDF
-        </button>}
+        {classes.length > 0 && <div className="mt-4 flex flex-wrap gap-2">
+          <button type="button" onClick={() => generateRacePdf(race, classes)}
+            className="rounded-lg px-4 py-2 font-bold text-sm" style={{ background: "var(--primary)", color: "var(--primary-fg)" }}>
+            Download Official PDF
+          </button>
+          <Link href={`/race-results/${race.slug || race.id}/pit`} className="rounded-lg border px-4 py-2 font-bold text-sm inline-flex items-center gap-2" style={{ borderColor: "var(--border)" }}>
+            <MonitorUp className="w-4 h-4" /> Pit Display
+          </Link>
+        </div>}
       </header>
       {classes.length === 0 ? <p>No classes are listed for this race.</p> : <div className="space-y-5">
         {classes.map((item) => {

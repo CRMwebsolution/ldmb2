@@ -17,6 +17,7 @@ import {
   Menu,
   X,
   ShieldCheck,
+  Flame,
 } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
@@ -25,6 +26,7 @@ const navItems = [
   { href: "/admin/races", label: "Race Nights", icon: Flag },
   { href: "/admin/results", label: "Log Passes & Results", icon: Trophy },
   { href: "/admin/racers", label: "Racer History", icon: ShieldCheck },
+  { href: "/admin/heatmaps", label: "Heatmaps", icon: Flame },
   { href: "/admin/classes", label: "Classes & Rules", icon: Truck },
   { href: "/admin/sponsors", label: "Sponsors", icon: Building },
 ];
@@ -34,6 +36,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const pathname = usePathname();
   const router = useRouter();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const isHeatmaps = pathname.startsWith("/admin/heatmaps");
 
   // Login form state for quick inline login
   const [loginEmail, setLoginEmail] = useState("");
@@ -115,10 +118,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       </div>
 
       {/* Main Admin Body */}
-      <div className="flex-1 flex flex-col md:flex-row max-w-7xl w-full mx-auto px-4 sm:px-6 py-6 gap-6">
+      <div className={`flex-1 flex flex-col md:flex-row w-full mx-auto px-4 sm:px-6 py-6 gap-6 ${isHeatmaps ? "max-w-[1920px]" : "max-w-7xl"}`}>
         {/* Sidebar Nav */}
         <aside
-          className={`md:w-60 shrink-0 ${
+          className={`${isHeatmaps ? "hidden" : "md:w-60 shrink-0"} ${
             mobileMenuOpen ? "block" : "hidden md:block"
           }`}
         >

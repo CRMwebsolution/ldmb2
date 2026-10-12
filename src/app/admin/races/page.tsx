@@ -59,8 +59,10 @@ export default function AdminRacesPage() {
         supabase.from("class_catalog").select("*").order("sort_order", { ascending: true }),
       ]);
 
-      if (racesRes.data) setRaces(racesRes.data);
-      if (catalogRes.data) setCatalog(catalogRes.data);
+      if (racesRes.error) throw racesRes.error;
+      if (catalogRes.error) throw catalogRes.error;
+      setRaces(racesRes.data || []);
+      setCatalog(catalogRes.data || []);
     } catch (err: any) {
       console.error("Error loading races data:", err);
       setMessage({ type: "error", text: "Failed to load races from database." });
@@ -124,35 +126,17 @@ export default function AdminRacesPage() {
         if (error) throw error;
         setMessage({ type: "success", text: "Race updated successfully!" });
       } else {
-        // Insert new race
-        const { data, error } = await supabase
-          .from("races")
-          .insert({
-            name: formData.name,
-            date: formData.date,
-            special_label: formData.special_label || null,
-            event_status: formData.event_status,
-            show_on_schedule: formData.show_on_schedule,
-            published: false,
-            pdf_url: formData.pdf_url || null,
-          })
-          .select()
-          .single();
-
+        // Create the race and snapshot all active catalog classes in one database transaction.
+        const { error } = await supabase.rpc("create_race_with_classes", {
+          p_name: formData.name,
+          p_date: formData.date,
+          p_special_label: formData.special_label || null,
+          p_event_status: formData.event_status,
+          p_show_on_schedule: formData.show_on_schedule,
+          p_pdf_url: formData.pdf_url || null,
+        });
         if (error) throw error;
-        if (data) {
-          const defaults = catalog.filter((item) => item.active).map((item) => ({
-            race_id: data.id,
-            name: item.name,
-            display_mode: item.default_display_mode,
-            order_num: item.sort_order,
-          }));
-          if (defaults.length) {
-            const { error: classesError } = await supabase.from("classes").insert(defaults);
-            if (classesError) throw new Error(`Race created, but classes could not be added: ${classesError.message}`);
-          }
-        }
-        setMessage({ type: "success", text: "New race created successfully!" });
+        setMessage({ type: "success", text: "New race and its class snapshots were created atomically." });
       }
 
       setModalOpen(false);
@@ -171,13 +155,13 @@ export default function AdminRacesPage() {
     }
 
     try {
-      const { error } = await supabase.from("races").delete().eq("id", raceId);
+      const { error } = await supabase.rpc("delete_race_safely", { p_race_id: raceId });
       if (error) throw error;
       setMessage({ type: "success", text: "Race deleted successfully." });
       await loadData();
     } catch (err: any) {
       console.error("Delete race error:", err);
-      setMessage({ type: "error", text: err.message || "Failed to delete race." });
+      setMessage({ type: "error", text: err.message || "Only empty, unpublished races can be deleted." });
     }
   };
 
@@ -206,44 +190,19 @@ export default function AdminRacesPage() {
   const handleToggleCatalogClass = async (cat: ClassCatalog) => {
     if (!activeRaceForClasses) return;
     setSavingClasses(true);
-
     try {
-      const existing = raceClasses.find((rc) => rc.name.toLowerCase() === cat.name.toLowerCase());
-
-      if (existing) {
-        const { count, error: countError } = await supabase.from("results")
-          .select("id", { count: "exact", head: true }).eq("class_id", existing.id);
-        if (countError) throw countError;
-        if (count) {
-          alert(`This class has ${count} result entries. Remove those entries in the results editor before removing the class.`);
-          return;
-        }
-        // Remove an empty class from this race night.
-        const { error } = await supabase.from("classes").delete().eq("id", existing.id);
-        if (error) throw error;
-        setRaceClasses((prev) => prev.filter((c) => c.id !== existing.id));
-      } else {
-        // Add class to race night
-        const nextOrder = (raceClasses.length > 0 ? Math.max(...raceClasses.map((c) => c.order_num || 0)) : 0) + 1;
-        const { data, error } = await supabase
-          .from("classes")
-          .insert({
-            race_id: activeRaceForClasses.id,
-            name: cat.name,
-            display_mode: cat.default_display_mode,
-            order_num: nextOrder,
-          })
-          .select()
-          .single();
-
-        if (error) throw error;
-        if (data) {
-          setRaceClasses((prev) => [...prev, data]);
-        }
-      }
+      const existing = raceClasses.some((rc) =>
+        rc.catalog_class_id === cat.id || rc.name.toLowerCase() === cat.name.toLowerCase());
+      const { error } = await supabase.rpc("set_race_catalog_class", {
+        p_race_id: activeRaceForClasses.id,
+        p_catalog_class_id: cat.id,
+        p_enabled: !existing,
+      });
+      if (error) throw error;
+      await openClassSelector(activeRaceForClasses);
     } catch (err: any) {
       console.error("Error toggling class:", err);
-      alert(`Error toggling class: ${err.message}`);
+      alert(err.message || "The class could not be changed.");
     } finally {
       setSavingClasses(false);
     }
@@ -253,50 +212,22 @@ export default function AdminRacesPage() {
   const handleQuickAddClass = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newClassName.trim() || !activeRaceForClasses) return;
-
+    setSavingClasses(true);
     try {
-      const nextSortOrder = (catalog.length > 0 ? Math.max(...catalog.map((c) => c.sort_order || 0)) : 0) + 1;
-      const { data: newCat, error: catErr } = await supabase
-        .from("class_catalog")
-        .insert({
-          name: newClassName.trim(),
-          entry_fee: newClassFee.trim() || null,
-          sort_order: nextSortOrder,
-          default_display_mode: "fastest",
-          active: true,
-        })
-        .select()
-        .single();
-
-      if (catErr) throw catErr;
-
-      // Add to catalog local list
-      if (newCat) {
-        setCatalog((prev) => [...prev, newCat]);
-        // Also assign to current race
-        const nextOrder = (raceClasses.length > 0 ? Math.max(...raceClasses.map((c) => c.order_num || 0)) : 0) + 1;
-        const { data: newRaceClass, error: rcErr } = await supabase
-          .from("classes")
-          .insert({
-            race_id: activeRaceForClasses.id,
-            name: newCat.name,
-            display_mode: "fastest",
-            order_num: nextOrder,
-          })
-          .select()
-          .single();
-
-        if (rcErr) throw rcErr;
-        if (newRaceClass) {
-          setRaceClasses((prev) => [...prev, newRaceClass]);
-        }
-      }
-
+      const { error } = await supabase.rpc("create_catalog_class_for_race", {
+        p_race_id: activeRaceForClasses.id,
+        p_name: newClassName.trim(),
+        p_entry_fee: newClassFee.trim() || null,
+      });
+      if (error) throw error;
       setNewClassName("");
       setNewClassFee("");
       setShowQuickAddClass(false);
+      await Promise.all([loadData(), openClassSelector(activeRaceForClasses)]);
     } catch (err: any) {
       alert(`Error adding class: ${err.message}`);
+    } finally {
+      setSavingClasses(false);
     }
   };
 

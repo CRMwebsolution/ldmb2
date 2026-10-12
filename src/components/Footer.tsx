@@ -56,6 +56,7 @@ export function Footer() {
                 ["Class Records", "/race-results/records"],
                 ["Track Sponsors", "/sponsors"],
                 ["Contact & Directions", "/contact"],
+                ["Privacy Policy", "/privacy"],
                 ["Admin Portal", "/admin"],
               ].map(([label, href]) => (
                 <li key={href}>
@@ -128,6 +129,8 @@ export function Footer() {
             reserved.
           </p>
           <div className="flex items-center gap-4 text-xs" style={{ color: "var(--muted-fg)" }}>
+            <Link href="/privacy" className="hover:text-primary transition-colors">Privacy Policy</Link>
+            <span>·</span>
             <span>Feb – Dec · Monthly Events</span>
             <span>·</span>
             <Link href="/admin" className="flex items-center gap-1 hover:text-primary transition-colors">

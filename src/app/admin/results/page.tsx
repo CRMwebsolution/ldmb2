@@ -2,13 +2,14 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowDown, ArrowUp, ChevronDown, ChevronUp, FileDown, Plus, RefreshCw, Save, Trophy } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronDown, ChevronUp, FileDown, FileSpreadsheet, Plus, RefreshCw, Save, Trophy } from "lucide-react";
 import { supabase } from "@/lib/supabase/client";
-import type { Race, RaceClass, RaceResult } from "@/lib/supabase/types";
+import type { Race, RaceClass, RaceResult, Racer } from "@/lib/supabase/types";
 import { buildRaceSavePayload, addBlankRows, prepareRaceEditor, type EditableClass, type EditableResult } from "@/lib/race-editor";
 import { computeRaceMetrics, formatPass, hasRecordedPass, isBlankResult } from "@/lib/race-results";
 import { todayAtTrack } from "@/lib/race-schedule";
 import { generateRacePdf } from "@/lib/generate-race-pdf";
+import { downloadRaceCsv } from "@/lib/race-csv";
 
 async function fetchRaceEditor(raceId: string) {
   const { data: raceClasses, error: classError } = await supabase.from("classes")
@@ -32,6 +33,7 @@ export default function AdminResultsPage() {
   const [races, setRaces] = useState<Race[]>([]);
   const [selectedRaceId, setSelectedRaceId] = useState("");
   const [classes, setClasses] = useState<EditableClass[]>([]);
+  const [racers, setRacers] = useState<Racer[]>([]);
   const [staleBlankIds, setStaleBlankIds] = useState<string[]>([]);
   const [collapsed, setCollapsed] = useState<string[]>([]);
   const [loadingRaces, setLoadingRaces] = useState(true);
@@ -59,6 +61,16 @@ export default function AdminResultsPage() {
         }
         setLoadingRaces(false);
       });
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    supabase.from("racers").select("*").order("display_name").then(({ data, error }) => {
+      if (!active) return;
+      if (error) console.error("Could not load racer identities", error);
+      else setRacers(data || []);
+    });
     return () => { active = false; };
   }, []);
 
@@ -104,13 +116,13 @@ export default function AdminResultsPage() {
     setDirty(true);
   }
 
-  function changeRow(classId: string, rowId: string, field: "name" | "first_half" | "second_half", value: string) {
+  function changeRow(classId: string, rowId: string, field: "name" | "first_half" | "second_half" | "racer_id", value: string) {
     setClasses((previous) => previous.map((cls) => cls.id !== classId ? cls : {
       ...cls,
       results: cls.results.map((row) => {
         if (row.id !== rowId) return row;
-        const next = { ...row, [field]: value } as EditableResult;
-        if (field !== "name") Object.assign(next, computeRaceMetrics(next.first_half, next.second_half));
+        const next = { ...row, [field]: field === "racer_id" ? value || null : value } as EditableResult;
+        if (field === "first_half" || field === "second_half") Object.assign(next, computeRaceMetrics(next.first_half, next.second_half));
         return next;
       }),
     }));
@@ -141,25 +153,28 @@ export default function AdminResultsPage() {
     setSaving(true);
     setMessage(null);
     try {
-      if (payload.classPayload.length) {
-        const { error } = await supabase.from("classes").upsert(payload.classPayload, { onConflict: "id" });
-        if (error) throw error;
+      const { data, error } = await supabase.rpc("save_race_workspace", {
+        p_race_id: selectedRace.id,
+        p_expected_revision: selectedRace.working_revision,
+        p_classes: payload.classPayload,
+        p_results: payload.resultPayload,
+        p_delete_ids: payload.deleteIds,
+      });
+      if (error) throw error;
+      const revision = data?.[0];
+      if (revision) {
+        setRaces((previous) => previous.map((race) => race.id === selectedRace.id ? {
+          ...race,
+          working_revision: revision.working_revision,
+          published_revision: revision.published_revision,
+        } : race));
       }
-      for (let start = 0; start < payload.resultPayload.length; start += 100) {
-        const { error } = await supabase.from("results")
-          .upsert(payload.resultPayload.slice(start, start + 100), { onConflict: "id" });
-        if (error) throw error;
-      }
-      for (let start = 0; start < payload.deleteIds.length; start += 100) {
-        const { error } = await supabase.from("results").delete().in("id", payload.deleteIds.slice(start, start + 100));
-        if (error) throw error;
-      }
-      setMessage({ error: false, text: `Saved ${payload.resultPayload.length} entries${selectedRace.published ? "; published results will refresh shortly." : " as a draft."}` });
+      setMessage({ error: false, text: `Atomically saved ${payload.resultPayload.length} entries${selectedRace.published ? "; a new immutable published revision was recorded." : " as a draft."}` });
       setLoadingEditor(true);
       setReload((value) => value + 1);
     } catch (error) {
       console.error("Race save failed", error);
-      setMessage({ error: true, text: "Save stopped after a database error. Refresh to inspect what was saved before retrying." });
+      setMessage({ error: true, text: error instanceof Error && /another window|serialization/i.test(error.message) ? "Another window saved this race first. Refresh before retrying so no work is overwritten." : "Nothing was saved because the atomic database transaction failed. You can safely retry." });
     } finally {
       setSaving(false);
     }
@@ -178,15 +193,36 @@ export default function AdminResultsPage() {
     }
     if (published && !confirm(`Publish ${selectedRace.name}? Its saved entries will be visible on the public results page.`)) return;
     try {
-      const { error } = await supabase.from("races").update({ published }).eq("id", selectedRace.id);
+      const { data, error } = await supabase.rpc("set_race_publication", {
+        p_race_id: selectedRace.id,
+        p_expected_revision: selectedRace.working_revision,
+        p_published: published,
+      });
       if (error) throw error;
-      setRaces((previous) => previous.map((race) => race.id === selectedRace.id ? { ...race, published } : race));
-      setMessage({ error: false, text: published ? "Results are published. Further saved passes will appear on the public page." : "Results are hidden from the public page." });
+      const revision = data?.[0];
+      setRaces((previous) => previous.map((race) => race.id === selectedRace.id ? {
+        ...race,
+        published,
+        working_revision: revision?.working_revision ?? race.working_revision,
+        published_revision: revision?.published_revision ?? race.published_revision,
+      } : race));
+      setMessage({ error: false, text: published ? "Results are published and an immutable official revision was recorded." : "Results are hidden from the public page; prior official revisions remain in the audit history." });
     } catch (error) {
       console.error("Publication failed", error);
       setMessage({ error: true, text: "Publication could not be updated." });
     }
   }
+
+  useEffect(() => {
+    const shortcut = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
+        event.preventDefault();
+        void saveAll();
+      }
+    };
+    window.addEventListener("keydown", shortcut);
+    return () => window.removeEventListener("keydown", shortcut);
+  });
 
   function refresh() {
     if (dirty && !confirm("Discard unsaved entries and reload this race?")) return;
@@ -215,6 +251,11 @@ export default function AdminResultsPage() {
           className="rounded-lg border px-3 py-2 text-sm font-bold disabled:opacity-50 inline-flex items-center gap-2" style={{ borderColor: "var(--border)" }}>
           <FileDown className="w-4 h-4" /> Export PDF
         </button>
+        <button type="button" onClick={() => selectedRace && downloadRaceCsv(selectedRace, classes)}
+          disabled={!selectedRace || loadingEditor || saving || !classes.length}
+          className="rounded-lg border px-3 py-2 text-sm font-bold disabled:opacity-50 inline-flex items-center gap-2" style={{ borderColor: "var(--border)" }}>
+          <FileSpreadsheet className="w-4 h-4" /> Export CSV
+        </button>
         <button type="button" onClick={saveAll} disabled={!hasPendingChanges || !selectedRace || loadingEditor || saving}
           className="rounded-lg px-4 py-2 text-sm font-bold disabled:opacity-50 inline-flex items-center gap-2"
           style={{ background: "var(--primary)", color: "var(--primary-fg)" }}>
@@ -228,13 +269,13 @@ export default function AdminResultsPage() {
         <select value={selectedRaceId} onChange={(event) => selectRace(event.target.value)} disabled={loadingRaces || saving}
           className="block mt-1 w-full rounded-lg border px-3 py-2" style={{ background: "var(--muted)", borderColor: "var(--border)" }}>
           {!selectedRaceId && <option value="">Select a race</option>}
-          {races.map((race) => <option key={race.id} value={race.id}>{race.date} · {race.name} {race.published ? "(Published)" : "(Draft)"}</option>)}
+          {races.map((race) => <option key={race.id} value={race.id}>{race.date} · {race.name} {race.published ? `(Published r${race.published_revision})` : `(Draft r${race.working_revision})`}</option>)}
         </select>
       </label>
       <button type="button" onClick={togglePublished} disabled={!selectedRace || loadingEditor || saving}
         className="rounded-lg border px-4 py-2 text-sm font-bold disabled:opacity-50"
         style={{ borderColor: selectedRace?.published ? "#16a34a" : "var(--border)" }}>
-        {selectedRace?.published ? "Published · Hide Results" : "Draft · Publish Results"}
+        {selectedRace?.published ? `Published revision ${selectedRace.published_revision} · Hide Results` : `Draft revision ${selectedRace?.working_revision ?? 0} · Publish Results`}
       </button>
     </div>
 
@@ -288,7 +329,7 @@ export default function AdminResultsPage() {
                     <thead><tr className="text-left" style={{ color: "var(--muted-fg)" }}>
                       <th className="p-2 w-10">#</th><th className="p-2">Racer / Driver</th>
                       <th className="p-2">1st Pass</th><th className="p-2">2nd Pass</th>
-                      <th className="p-2">Best Pass</th><th className="p-2">Consistency</th>
+                      <th className="p-2">Linked Identity</th><th className="p-2">Best Pass</th><th className="p-2">Consistency</th>
                     </tr></thead>
                     <tbody>{cls.results.map((row, rowIndex) => <tr key={row.id} className="border-t" style={{ borderColor: "var(--border)" }}>
                       <td className="p-2" style={{ color: "var(--muted-fg)" }}>{rowIndex + 1}</td>
@@ -298,6 +339,14 @@ export default function AdminResultsPage() {
                           placeholder={field === "name" ? "Name" : "Time, ft, or DQ"}
                           className="w-full rounded border px-2 py-2 font-mono" style={{ background: "var(--surface)", borderColor: "var(--border)" }} />
                       </td>)}
+                      <td className="p-1">
+                        <select value={row.racer_id || ""} onChange={(event) => changeRow(cls.id, row.id, "racer_id", event.target.value)}
+                          aria-label={`Linked identity for ${row.name || `row ${rowIndex + 1}`}`}
+                          className="w-full rounded border px-2 py-2 text-xs" style={{ background: "var(--surface)", borderColor: "var(--border)" }}>
+                          <option value="">Unlinked</option>
+                          {racers.map((racer) => <option key={racer.id} value={racer.id}>{racer.display_name}</option>)}
+                        </select>
+                      </td>
                       <td className="p-2 font-mono font-bold">{formatPass(row.fastest)}</td>
                       <td className="p-2 font-mono">{row.consistency == null ? "—" : Number(row.consistency).toFixed(3)}</td>
                     </tr>)}</tbody>

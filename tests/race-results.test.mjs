@@ -59,7 +59,7 @@ test("legacy no-pass markers survive editing without becoming numeric times", ()
   );
   assert.deepEqual(buildRaceSavePayload(classes, []).resultPayload[0], {
     id: "racer", class_id: "class-1", order_num: 1, name: "Driver",
-    first_half: "4.945", second_half: "-", fastest: "4.945", consistency: null,
+    first_half: "4.945", second_half: "-", fastest: "4.945", consistency: null, racer_id: null,
   });
   classes[0].results[0].second_half = "bogus";
   assert.throws(() => buildRaceSavePayload(classes, []), /pass format/);
@@ -148,4 +148,11 @@ test("named consistency classes override legacy both mode and rank by difference
   }
   assert.equal(records.filter((group) => group.kind === "consistency").length, 4);
   assert.equal(records.find((group) => group.name === "Unlimited").entries[0].racerName, "Single");
+});
+
+
+test("zero and negative numeric passes are rejected without changing supported scoring modes", () => {
+  assert.equal(isValidPassInput("0"), false);
+  assert.equal(isValidPassInput("-1.25"), false);
+  assert.deepEqual(computeRaceMetrics("0", "9.250"), { fastest: "9.250", consistency: null });
 });

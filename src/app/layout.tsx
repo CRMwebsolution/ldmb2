@@ -7,6 +7,7 @@ import { ThemeProvider } from "@/components/ThemeProvider";
 import { AuthProvider } from "@/lib/supabase/auth-context";
 import { Navbar } from "@/components/Navbar";
 import { Footer } from "@/components/Footer";
+import { FirstPartyAnalytics } from "@/components/FirstPartyAnalytics";
 
 const geist = Geist({
   variable: "--font-geist-sans",
@@ -73,6 +74,7 @@ export default function RootLayout({
             <Navbar />
             <main className="flex-1 pt-16">{children}</main>
             <Footer />
+            <FirstPartyAnalytics />
           </AuthProvider>
         </ThemeProvider>
         <Analytics />

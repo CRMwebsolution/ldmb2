@@ -1,6 +1,7 @@
 import type { RaceResult } from "@/lib/supabase/types";
 
 export type PassKind = "time" | "distance" | "invalid" | "empty";
+export type ScoringMode = "fastest" | "consistency" | "both";
 export type ParsedPass = { kind: PassKind; value: number | null };
 
 const DISTANCE = /^(-?\d+(?:\.\d+)?)\s*(?:ft|feet|foot|['’′])$/i;
@@ -14,8 +15,18 @@ export function parsePass(raw: unknown): ParsedPass {
   if (!value) return { kind: "empty", value: null };
   if (DQ.test(value)) return { kind: "invalid", value: null };
   const distance = value.match(DISTANCE);
-  if (distance) return { kind: "distance", value: Number(distance[1]) };
-  if (TIME.test(value)) return { kind: "time", value: Number(value) };
+  if (distance) {
+    const number = Number(distance[1]);
+    return Number.isFinite(number) && number > 0
+      ? { kind: "distance", value: number }
+      : { kind: "invalid", value: null };
+  }
+  if (TIME.test(value)) {
+    const number = Number(value);
+    return Number.isFinite(number) && number > 0
+      ? { kind: "time", value: number }
+      : { kind: "invalid", value: null };
+  }
   return { kind: "invalid", value: null };
 }
 
@@ -35,6 +46,10 @@ export function hasRecordedPass(row: {
   });
 }
 
+function roundedThousandth(value: number) {
+  return Math.round((value + Number.EPSILON) * 1000) / 1000;
+}
+
 export function computeRaceMetrics(first: string | null, second: string | null) {
   const passes = [parsePass(first), parsePass(second)];
   const times = passes.filter((p) => p.kind === "time" && p.value !== null) as { value: number }[];
@@ -42,7 +57,7 @@ export function computeRaceMetrics(first: string | null, second: string | null) 
     return {
       fastest: Math.min(...times.map((p) => p.value)).toFixed(3),
       consistency: times.length === 2
-        ? Number(Math.abs(times[0].value - times[1].value).toFixed(3))
+        ? roundedThousandth(Math.abs(times[0].value - times[1].value))
         : null,
     };
   }
@@ -78,6 +93,10 @@ export function compareBestPass(a: string | null, b: string | null): number {
   if (first.value === null) return second.value === null ? 0 : 1;
   if (second.value === null) return -1;
   return first.kind === "distance" ? second.value - first.value : first.value - second.value;
+}
+
+export function isScoringMode(value: unknown): value is ScoringMode {
+  return value === "fastest" || value === "consistency" || value === "both";
 }
 
 export function sortClassResults(rows: RaceResult[], mode: string): RaceResult[] {

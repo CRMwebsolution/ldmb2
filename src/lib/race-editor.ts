@@ -8,7 +8,7 @@ export function makePlaceholder(classId: string, order: number): EditableResult 
   return {
     id: crypto.randomUUID(), class_id: classId, order_num: order,
     name: null, first_half: null, second_half: null, fastest: null,
-    consistency: null, created_at: null, persisted: false,
+    consistency: null, racer_id: null, updated_at: null, created_at: null, persisted: false,
   };
 }
 
@@ -46,7 +46,7 @@ export function buildRaceSavePayload(classes: EditableClass[], staleBlankIds: st
     };
   });
   const resultPayload: Array<Pick<RaceResult,
-    "id" | "class_id" | "order_num" | "name" | "first_half" | "second_half" | "fastest" | "consistency">> = [];
+    "id" | "class_id" | "order_num" | "name" | "first_half" | "second_half" | "fastest" | "consistency" | "racer_id">> = [];
   const deleteIds = new Set(staleBlankIds);
 
   for (const cls of classes) {
@@ -68,7 +68,7 @@ export function buildRaceSavePayload(classes: EditableClass[], staleBlankIds: st
       resultPayload.push({
         id: row.id, class_id: cls.id, order_num: ++order,
         name: row.name?.trim() || null, first_half: first, second_half: second,
-        fastest: metrics.fastest, consistency: metrics.consistency,
+        fastest: metrics.fastest, consistency: metrics.consistency, racer_id: row.racer_id || null,
       });
     }
   }
