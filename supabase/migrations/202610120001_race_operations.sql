@@ -9,6 +9,27 @@ alter table public.classes
   add column if not exists entry_fee_snapshot text,
   add column if not exists scoring_version smallint not null default 1;
 
+-- Preserve the class definition that applied to existing race nights without changing
+-- any current business columns. Exact-case matches win when legacy catalog names differ only by case.
+with catalog_match as (
+  select c.id as class_id, matched.id as catalog_class_id, matched.rules, matched.entry_fee
+  from public.classes c
+  join lateral (
+    select cc.id, cc.rules, cc.entry_fee
+    from public.class_catalog cc
+    where lower(trim(cc.name)) = lower(trim(c.name))
+    order by (cc.name = c.name) desc, cc.sort_order, cc.id
+    limit 1
+  ) matched on true
+  where c.catalog_class_id is null
+)
+update public.classes c
+set catalog_class_id = catalog_match.catalog_class_id,
+    rules_snapshot = coalesce(c.rules_snapshot, catalog_match.rules),
+    entry_fee_snapshot = coalesce(c.entry_fee_snapshot, catalog_match.entry_fee)
+from catalog_match
+where c.id = catalog_match.class_id;
+
 alter table public.results
   add column if not exists racer_id uuid,
   add column if not exists updated_at timestamptz not null default now();
@@ -108,12 +129,61 @@ begin
     race_id, name, display_mode, order_num, catalog_class_id,
     rules_snapshot, entry_fee_snapshot, scoring_version
   )
-  select v_race_id, name, default_display_mode, sort_order, id, rules, entry_fee, 1
+  select v_race_id, name, default_display_mode,
+    row_number() over (order by sort_order, id)::integer,
+    id, rules, entry_fee, 1
   from public.class_catalog
   where active
-  order by sort_order;
+  order by sort_order, id;
 
   return v_race_id;
+end $$;
+
+-- Internal helper used only by the admin-checked RPCs below. It advances the draft
+-- revision and records a new immutable official snapshot when a published race changes.
+create or replace function public._advance_race_revision(p_race_id uuid)
+returns table(working_revision bigint, published_revision bigint)
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_is_published boolean;
+  v_working bigint;
+  v_published bigint;
+begin
+  update public.races r
+  set working_revision = r.working_revision + 1,
+      published_revision = case
+        when coalesce(r.published, false) then r.published_revision + 1
+        else r.published_revision
+      end
+  where r.id = p_race_id
+  returning coalesce(r.published, false), r.working_revision, r.published_revision
+  into v_is_published, v_working, v_published;
+
+  if not found then raise exception 'Race not found' using errcode = 'P0002'; end if;
+
+  if v_is_published then
+    insert into public.race_result_versions(race_id, revision, created_by, reason, snapshot)
+    select p_race_id, v_published, auth.uid(), 'published-edit',
+      jsonb_build_object(
+        'race', to_jsonb(r),
+        'classes', coalesce((
+          select jsonb_agg(
+            to_jsonb(c) || jsonb_build_object(
+              'results', coalesce((
+                select jsonb_agg(to_jsonb(rs) order by rs.order_num, rs.id)
+                from public.results rs where rs.class_id = c.id
+              ), '[]'::jsonb)
+            ) order by c.order_num, c.id
+          ) from public.classes c where c.race_id = p_race_id
+        ), '[]'::jsonb)
+      )
+    from public.races r where r.id = p_race_id;
+  end if;
+
+  return query select v_working, v_published;
 end $$;
 
 create or replace function public.save_race_workspace(
@@ -175,6 +245,50 @@ begin
     raise exception 'Existing class belongs to another race' using errcode = '22023';
   end if;
 
+  if exists (
+    select 1
+    from public.classes c
+    where c.race_id = p_race_id
+      and not exists (
+        select 1
+        from jsonb_to_recordset(coalesce(p_classes, '[]'::jsonb)) as x(id uuid)
+        where x.id = c.id
+      )
+  ) then
+    raise exception 'The class payload is stale or incomplete. Refresh before saving.'
+      using errcode = '40001';
+  end if;
+
+  if exists (
+    select 1
+    from jsonb_to_recordset(coalesce(p_classes, '[]'::jsonb))
+      as x(id uuid, order_num integer)
+    where x.id is null or x.order_num is null or x.order_num < 1
+  ) or exists (
+    select 1
+    from jsonb_to_recordset(coalesce(p_classes, '[]'::jsonb))
+      as x(id uuid, order_num integer)
+    group by x.id having count(*) > 1
+  ) or exists (
+    select 1
+    from jsonb_to_recordset(coalesce(p_classes, '[]'::jsonb))
+      as x(id uuid, order_num integer)
+    group by x.order_num having count(*) > 1
+  ) then
+    raise exception 'Class identifiers and positions must be unique'
+      using errcode = '22023';
+  end if;
+
+  -- Move current positions out of the unique-index range before applying a reordered payload.
+  with staged as (
+    select c.id, row_number() over (order by c.id) as temporary_order
+    from public.classes c where c.race_id = p_race_id
+  )
+  update public.classes c
+  set order_num = -1000000 - staged.temporary_order
+  from staged
+  where c.id = staged.id;
+
   insert into public.classes(id, race_id, name, display_mode, order_num)
   select x.id, p_race_id, trim(x.name), x.display_mode, x.order_num
   from jsonb_to_recordset(coalesce(p_classes, '[]'::jsonb))
@@ -206,6 +320,62 @@ begin
     raise exception 'Existing result belongs to another race' using errcode = '22023';
   end if;
 
+  if exists (
+    select 1
+    from jsonb_to_recordset(coalesce(p_results, '[]'::jsonb))
+      as x(id uuid, class_id uuid, order_num integer)
+    where x.id is null or x.class_id is null or x.order_num is null or x.order_num < 1
+  ) or exists (
+    select 1
+    from jsonb_to_recordset(coalesce(p_results, '[]'::jsonb))
+      as x(id uuid, class_id uuid, order_num integer)
+    group by x.id having count(*) > 1
+  ) or exists (
+    select 1
+    from jsonb_to_recordset(coalesce(p_results, '[]'::jsonb))
+      as x(id uuid, class_id uuid, order_num integer)
+    group by x.class_id, x.order_num having count(*) > 1
+  ) then
+    raise exception 'Result identifiers and positions must be unique'
+      using errcode = '22023';
+  end if;
+
+  if exists (
+    select 1
+    from public.results rs
+    join public.classes c on c.id = rs.class_id
+    where c.race_id = p_race_id
+      and not (rs.id = any(coalesce(p_delete_ids, '{}'::uuid[])))
+      and not exists (
+        select 1
+        from jsonb_to_recordset(coalesce(p_results, '[]'::jsonb)) as x(id uuid)
+        where x.id = rs.id
+      )
+  ) then
+    raise exception 'The result payload is stale or incomplete. Refresh before saving.'
+      using errcode = '40001';
+  end if;
+
+  -- Delete known legacy blank rows first, then move remaining positions out of the
+  -- unique-index range so compressed/reordered rows can be saved atomically.
+  delete from public.results r
+  using public.classes c
+  where r.class_id = c.id
+    and c.race_id = p_race_id
+    and r.id = any(coalesce(p_delete_ids, '{}'::uuid[]));
+
+  with staged as (
+    select rs.id,
+      row_number() over (partition by rs.class_id order by rs.id) as temporary_order
+    from public.results rs
+    join public.classes c on c.id = rs.class_id
+    where c.race_id = p_race_id
+  )
+  update public.results rs
+  set order_num = -1000000 - staged.temporary_order
+  from staged
+  where rs.id = staged.id;
+
   insert into public.results(
     id, class_id, order_num, name, first_half, second_half, fastest, consistency, racer_id, updated_at
   )
@@ -225,14 +395,8 @@ begin
     second_half = excluded.second_half,
     fastest = excluded.fastest,
     consistency = excluded.consistency,
-    racer_id = coalesce(excluded.racer_id, public.results.racer_id),
+    racer_id = excluded.racer_id,
     updated_at = now();
-
-  delete from public.results r
-  using public.classes c
-  where r.class_id = c.id
-    and c.race_id = p_race_id
-    and r.id = any(coalesce(p_delete_ids, '{}'::uuid[]));
 
   update public.races
   set working_revision = public.races.working_revision + 1
@@ -368,7 +532,7 @@ create or replace function public.set_race_catalog_class(
 language plpgsql
 security definer
 set search_path = public, pg_temp
-as $
+as $$
 declare
   v_catalog public.class_catalog%rowtype;
   v_existing public.classes%rowtype;
@@ -396,6 +560,7 @@ begin
       coalesce((select max(order_num) + 1 from public.classes where race_id = p_race_id), 1),
       v_catalog.id, v_catalog.rules, v_catalog.entry_fee, 1
     ) returning id into v_id;
+    perform public._advance_race_revision(p_race_id);
     return v_id;
   end if;
 
@@ -405,8 +570,9 @@ begin
       using errcode = '23503';
   end if;
   delete from public.classes where id = v_existing.id;
+  perform public._advance_race_revision(p_race_id);
   return null;
-end $;
+end $$;
 
 create or replace function public.create_catalog_class_for_race(
   p_race_id uuid,
@@ -416,7 +582,7 @@ create or replace function public.create_catalog_class_for_race(
 language plpgsql
 security definer
 set search_path = public, pg_temp
-as $
+as $$
 declare
   v_catalog public.class_catalog%rowtype;
   v_race_class public.classes%rowtype;
@@ -446,21 +612,71 @@ begin
     v_catalog.id, v_catalog.rules, v_catalog.entry_fee, 1
   ) returning * into v_race_class;
 
+  perform public._advance_race_revision(p_race_id);
   return jsonb_build_object('catalog', to_jsonb(v_catalog), 'raceClass', to_jsonb(v_race_class));
-end $;
+end $$;
 
+create or replace function public.set_race_class_display_mode(
+  p_race_id uuid,
+  p_class_id uuid,
+  p_expected_revision bigint,
+  p_display_mode text
+) returns table(working_revision bigint, published_revision bigint)
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_race public.races%rowtype;
+  v_current_mode text;
+begin
+  if not public.is_current_race_admin() then
+    raise exception 'Race admin access required' using errcode = '42501';
+  end if;
+  if p_display_mode not in ('fastest', 'consistency', 'both') then
+    raise exception 'Only fastest, consistency, and both scoring are supported'
+      using errcode = '22023';
+  end if;
+
+  select * into v_race from public.races where id = p_race_id for update;
+  if not found then raise exception 'Race not found' using errcode = 'P0002'; end if;
+  if v_race.working_revision <> p_expected_revision then
+    raise exception 'Race configuration changed in another window. Refresh before saving.'
+      using errcode = '40001';
+  end if;
+
+  select c.display_mode into v_current_mode
+  from public.classes c
+  where c.id = p_class_id and c.race_id = p_race_id
+  for update;
+  if not found then raise exception 'Race class not found' using errcode = 'P0002'; end if;
+
+  if v_current_mode = p_display_mode then
+    return query select v_race.working_revision, v_race.published_revision;
+    return;
+  end if;
+
+  update public.classes set display_mode = p_display_mode where id = p_class_id;
+  return query
+    select revised.working_revision, revised.published_revision
+    from public._advance_race_revision(p_race_id) revised;
+end $$;
+
+revoke all on function public._advance_race_revision(uuid) from public, anon, authenticated;
 revoke all on function public.create_race_with_classes(text, date, text, text, boolean, text) from public;
 revoke all on function public.save_race_workspace(uuid, bigint, jsonb, jsonb, uuid[]) from public;
 revoke all on function public.set_race_publication(uuid, bigint, boolean) from public;
 revoke all on function public.delete_race_safely(uuid) from public;
 revoke all on function public.set_race_catalog_class(uuid, uuid, boolean) from public;
 revoke all on function public.create_catalog_class_for_race(uuid, text, text) from public;
+revoke all on function public.set_race_class_display_mode(uuid, uuid, bigint, text) from public;
 grant execute on function public.create_race_with_classes(text, date, text, text, boolean, text) to authenticated;
 grant execute on function public.save_race_workspace(uuid, bigint, jsonb, jsonb, uuid[]) to authenticated;
 grant execute on function public.set_race_publication(uuid, bigint, boolean) to authenticated;
 grant execute on function public.delete_race_safely(uuid) to authenticated;
 grant execute on function public.set_race_catalog_class(uuid, uuid, boolean) to authenticated;
 grant execute on function public.create_catalog_class_for_race(uuid, text, text) to authenticated;
+grant execute on function public.set_race_class_display_mode(uuid, uuid, bigint, text) to authenticated;
 
 do $$
 begin

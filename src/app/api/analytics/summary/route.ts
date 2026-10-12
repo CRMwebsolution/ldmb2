@@ -85,9 +85,15 @@ export async function GET(request: NextRequest) {
     const spatialVersion = version === "all"
       ? String(pageviews[0]?.deployment_version || "") || null
       : version;
-    const spatialPageIds = new Set(pageviews
-      .filter((row) => spatialVersion && row.deployment_version === spatialVersion)
-      .map((row) => String(row.id)));
+    const versionPageviews = pageviews
+      .filter((row) => spatialVersion && row.deployment_version === spatialVersion);
+    const spatialReference = versionPageviews[0];
+    const spatialDevice = spatialReference
+      ? String(spatialReference.device_class) as "desktop" | "tablet" | "mobile"
+      : null;
+    const spatialPageviews = versionPageviews.filter((row) =>
+      device !== "all" || row.device_class === spatialDevice);
+    const spatialPageIds = new Set(spatialPageviews.map((row) => String(row.id)));
     const spatialInteractions = interactions.filter((row) => spatialPageIds.has(String(row.pageview_id)));
     const spatialSessionIds = new Set(pageviews
       .filter((row) => spatialPageIds.has(String(row.id)))
@@ -140,7 +146,7 @@ export async function GET(request: NextRequest) {
     }
 
     const ratios = pageviews.map((row) => Number(row.max_scroll_ratio || 0));
-    const spatialRatios = pageviews.filter((row) => spatialPageIds.has(String(row.id)))
+    const spatialRatios = spatialPageviews
       .map((row) => Number(row.max_scroll_ratio || 0));
     const bands = [
       { label: "0–25%", min: 0, max: 0.25 },
@@ -163,7 +169,12 @@ export async function GET(request: NextRequest) {
       .sort((a, b) => b.clicks - a.clicks).slice(0, 10);
 
     return NextResponse.json({
-      filters: { pathname, device, version, spatialVersion, days },
+      filters: {
+        pathname, device, version, spatialVersion, spatialDevice,
+        spatialViewportWidth: spatialReference ? Number(spatialReference.viewport_width) : null,
+        spatialViewportHeight: spatialReference ? Number(spatialReference.viewport_height) : null,
+        days,
+      },
       options: {
         pages: [...new Set((optionRows || []).map((row) => row.pathname))].filter(isTrackablePath).sort(),
         versions: [...new Set((optionRows || []).map((row) => row.deployment_version))],

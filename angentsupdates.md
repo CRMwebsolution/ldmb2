@@ -98,3 +98,27 @@
   stopped only at this TypeScript error. A new preview check was triggered by this push.
 - No migrations were applied.
 - No merge or production deployment was performed.
+
+
+## 2026-10-12 9:31 AM EDT — Codex
+
+### What it did
+
+- Corrected two PostgreSQL function delimiters caught during the final migration audit.
+- Made class and result reordering safe under the existing unique position indexes, deletes stale blank result rows before upserts, rejects incomplete/stale payloads, and allows a racer identity to be explicitly unlinked.
+- Backfills additive class catalog/rule/fee snapshot columns for existing race classes without changing legacy business columns.
+- Advances race revisions and immutable published snapshots when class membership or scoring display changes; class display changes now use an optimistic, admin-checked RPC.
+- Captures clicks immediately so navigation clicks are not lost while retaining delayed probable-dead-click classification.
+- Uses the exact newest recorded viewport width for spatial replay and avoids mixing device layouts in the optional All Traffic overlay.
+
+### Database changes
+
+- Updated the unexecuted migration `supabase/migrations/202610120001_race_operations.sql` only.
+- No migration was applied and no production data or schema was changed.
+
+### Other relevant changes
+
+- A read-only production schema metadata check confirmed the existing race/class/result/catalog columns, UUID keys, unique order indexes, and `is_current_race_admin()` helper expected by the migration.
+- The preceding branch preview completed a successful Vercel production build and targeted public/privacy/admin-gate smoke checks. This push triggers a fresh preview build for the fixes above.
+- Local lint and Node tests still could not start because the workspace command runner fails before PowerShell launches; they are not claimed as passed.
+- No merge or production deployment was performed.

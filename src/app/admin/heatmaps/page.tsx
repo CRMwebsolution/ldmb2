@@ -15,7 +15,10 @@ const DEVICE_WIDTH: Record<DeviceClass | "all", number> = {
 };
 const VIEWPORT_HEIGHT = 720;
 const EMPTY: AnalyticsSummary = {
-  filters: { pathname: "/", device: "desktop", version: "all", spatialVersion: null, days: 7 },
+  filters: {
+    pathname: "/", device: "desktop", version: "all", spatialVersion: null,
+    spatialDevice: null, spatialViewportWidth: null, spatialViewportHeight: null, days: 7,
+  },
   options: { pages: ["/"], versions: [] },
   totals: {
     sessions: 0, pageviews: 0, clicks: 0, movements: 0,
@@ -58,7 +61,9 @@ export default function HeatmapsPage() {
   const [elementRects, setElementRects] = useState<{ key: string; top: number; left: number; width: number; height: number }[]>([]);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const previewHostRef = useRef<HTMLDivElement>(null);
-  const width = DEVICE_WIDTH[device];
+  const width = summary.filters.device === device && summary.filters.spatialViewportWidth
+    ? summary.filters.spatialViewportWidth
+    : DEVICE_WIDTH[device];
 
   useEffect(() => {
     const host = previewHostRef.current;
@@ -307,7 +312,7 @@ export default function HeatmapsPage() {
             <Icon className="w-3.5 h-3.5" /> {label}
           </button>)}
         </div>
-        {device === "all" && <p className="text-xs" style={{ color: "var(--muted-fg)" }}>Aggregate metrics include all devices; the spatial preview uses desktop layout. Select one device for precise placement.</p>}
+        {device === "all" && <p className="text-xs" style={{ color: "var(--muted-fg)" }}>Aggregate metrics include all devices; the spatial preview uses the newest recorded {summary.filters.spatialDevice || "device"} layout. Select one device for a device-specific heatmap.</p>}
 
         <label className="text-xs font-bold block">Page
           <select className="mt-1 w-full rounded-lg border p-2" style={{ background: "var(--surface)", borderColor: "var(--border)" }} value={pathname} onChange={(event) => setPathname(event.target.value)}>

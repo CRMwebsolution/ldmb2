@@ -91,6 +91,9 @@ export type AnalyticsSummary = {
     device: DeviceClass | "all";
     version: string;
     spatialVersion: string | null;
+    spatialDevice: DeviceClass | null;
+    spatialViewportWidth: number | null;
+    spatialViewportHeight: number | null;
     days: number;
   };
   options: {

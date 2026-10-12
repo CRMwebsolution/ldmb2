@@ -308,6 +308,13 @@ export type Database = {
         Args: { p_race_id: string; p_expected_revision: number; p_published: boolean };
         Returns: { working_revision: number; published_revision: number }[];
       };
+      set_race_class_display_mode: {
+        Args: {
+          p_race_id: string; p_class_id: string;
+          p_expected_revision: number; p_display_mode: "fastest" | "consistency" | "both";
+        };
+        Returns: { working_revision: number; published_revision: number }[];
+      };
       delete_race_safely: { Args: { p_race_id: string }; Returns: undefined };
       set_race_catalog_class: {
         Args: { p_race_id: string; p_catalog_class_id: string; p_enabled: boolean };

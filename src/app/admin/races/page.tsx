@@ -199,7 +199,11 @@ export default function AdminRacesPage() {
         p_enabled: !existing,
       });
       if (error) throw error;
-      await openClassSelector(activeRaceForClasses);
+      const { data: refreshedRace, error: refreshError } = await supabase
+        .from("races").select("*").eq("id", activeRaceForClasses.id).single();
+      if (refreshError) throw refreshError;
+      setRaces((previous) => previous.map((race) => race.id === refreshedRace.id ? refreshedRace : race));
+      await openClassSelector(refreshedRace);
     } catch (err: any) {
       console.error("Error toggling class:", err);
       alert(err.message || "The class could not be changed.");
@@ -223,7 +227,10 @@ export default function AdminRacesPage() {
       setNewClassName("");
       setNewClassFee("");
       setShowQuickAddClass(false);
-      await Promise.all([loadData(), openClassSelector(activeRaceForClasses)]);
+      const { data: refreshedRace, error: refreshError } = await supabase
+        .from("races").select("*").eq("id", activeRaceForClasses.id).single();
+      if (refreshError) throw refreshError;
+      await Promise.all([loadData(), openClassSelector(refreshedRace)]);
     } catch (err: any) {
       alert(`Error adding class: ${err.message}`);
     } finally {
@@ -233,12 +240,30 @@ export default function AdminRacesPage() {
 
   // Change display mode for a race class
   const handleUpdateDisplayMode = async (classId: string, mode: "fastest" | "consistency" | "both") => {
+    if (!activeRaceForClasses) return;
     try {
-      const { error } = await supabase.from("classes").update({ display_mode: mode }).eq("id", classId);
+      const { data, error } = await supabase.rpc("set_race_class_display_mode", {
+        p_race_id: activeRaceForClasses.id,
+        p_class_id: classId,
+        p_expected_revision: activeRaceForClasses.working_revision,
+        p_display_mode: mode,
+      });
       if (error) throw error;
+      const revision = data?.[0];
+      if (revision) {
+        const refreshedRace = {
+          ...activeRaceForClasses,
+          working_revision: revision.working_revision,
+          published_revision: revision.published_revision,
+        };
+        setActiveRaceForClasses(refreshedRace);
+        setRaces((previous) => previous.map((race) => race.id === refreshedRace.id ? refreshedRace : race));
+      }
       setRaceClasses((prev) => prev.map((c) => (c.id === classId ? { ...c, display_mode: mode } : c)));
     } catch (err: any) {
-      alert(`Error updating display mode: ${err.message}`);
+      alert(err.message?.includes("another window")
+        ? "This race changed in another window. Reopen the class selector before retrying."
+        : `Error updating display mode: ${err.message}`);
     }
   };
 

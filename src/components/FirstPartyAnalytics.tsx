@@ -161,7 +161,7 @@ export function FirstPartyAnalytics() {
       const vw = innerWidth;
       const vh = innerHeight;
       const rect = safe?.rect;
-      interactions.push({
+      const interaction: AnalyticsInteraction = {
         clientEventId: randomId(),
         kind,
         offsetMs: Math.max(0, Math.round(performance.now() - started)),
@@ -185,7 +185,9 @@ export function FirstPartyAnalytics() {
         positionContext: safe?.positionContext,
         probableDeadClick: dead,
         deadClickReason: deadReason,
-      });
+      };
+      interactions.push(interaction);
+      return interaction;
     }
 
     function onClick(event: PointerEvent) {
@@ -196,18 +198,25 @@ export function FirstPartyAnalytics() {
       const beforeMutation = mutationVersion;
       const repeated = recentClick?.key === safe.key && performance.now() - recentClick.at < 900;
       recentClick = { key: safe.key, at: performance.now() };
-      window.setTimeout(() => {
-        if (stopped) return;
-        const noAction = location.href === beforeUrl && mutationVersion === beforeMutation;
-        const dead = !interactive || repeated || noAction;
-        capturePosition(
-          event,
-          "click",
-          dead,
-          !interactive ? "non-interactive element" : repeated ? "repeated click" : noAction ? "no visible action" : undefined,
-        );
-        if (interactions.length >= MAX_EVENTS_PER_FLUSH) void flush();
-      }, 850);
+      const immediateReason = !interactive
+        ? "non-interactive element"
+        : repeated
+          ? "repeated click"
+          : undefined;
+      const interaction = capturePosition(event, "click", !!immediateReason, immediateReason);
+      if (!immediateReason) {
+        window.setTimeout(() => {
+          if (stopped) return;
+          const noAction = location.href === beforeUrl && mutationVersion === beforeMutation;
+          if (noAction) {
+            interaction.probableDeadClick = true;
+            interaction.deadClickReason = "no visible action";
+          }
+          if (interactions.length >= MAX_EVENTS_PER_FLUSH) void flush();
+        }, 850);
+      } else if (interactions.length >= MAX_EVENTS_PER_FLUSH) {
+        void flush();
+      }
     }
 
     function onMove(event: PointerEvent) {
