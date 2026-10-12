@@ -9,6 +9,7 @@ import type { Race, RaceClass, RaceResult } from "@/lib/supabase/types";
 import { formatPass, formatRaceDate, sortClassResults } from "@/lib/race-results";
 import { todayAtTrack } from "@/lib/race-schedule";
 import { generateRacePdf } from "@/lib/generate-race-pdf";
+import { SpectatorQR } from "@/components/SpectatorQR";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 type ClassWithResults = RaceClass & { results: RaceResult[] };
@@ -107,15 +108,18 @@ export default function RaceResultsDetail() {
         <h1 className="text-4xl sm:text-5xl font-black mt-2">{race.name}</h1>
         <p className="mt-2" style={{ color: "var(--muted-fg)" }}>{formatRaceDate(race.date)}</p>
         <p className="mt-1 text-xs" style={{ color: "var(--muted-fg)" }}>Published passes refresh automatically while this page is open, every few seconds on race day.</p>
-        {classes.length > 0 && <div className="mt-4 flex flex-wrap gap-2">
-          <button type="button" onClick={() => generateRacePdf(race, classes)}
-            className="rounded-lg px-4 py-2 font-bold text-sm" style={{ background: "var(--primary)", color: "var(--primary-fg)" }}>
-            Download Official PDF
-          </button>
-          <Link href={`/race-results/${race.slug || race.id}/pit`} className="rounded-lg border px-4 py-2 font-bold text-sm inline-flex items-center gap-2" style={{ borderColor: "var(--border)" }}>
-            <MonitorUp className="w-4 h-4" /> Pit Display
-          </Link>
-        </div>}
+        <div className="mt-4 flex flex-wrap gap-2">
+          {classes.length > 0 && <>
+            <button type="button" onClick={() => generateRacePdf(race, classes)}
+              className="rounded-lg px-4 py-2 font-bold text-sm" style={{ background: "var(--primary)", color: "var(--primary-fg)" }}>
+              Download Official PDF
+            </button>
+            <Link href={`/race-results/${race.slug || race.id}/pit`} className="rounded-lg border px-4 py-2 font-bold text-sm inline-flex items-center gap-2" style={{ borderColor: "var(--border)" }}>
+              <MonitorUp className="w-4 h-4" /> Pit Display
+            </Link>
+          </>}
+          <SpectatorQR path={`/race-results/${race.slug || race.id}`} eventName={race.name} />
+        </div>
       </header>
       {classes.length === 0 ? <p>No classes are listed for this race.</p> : <div className="space-y-5">
         {classes.map((item) => {

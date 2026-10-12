@@ -324,6 +324,24 @@ export type Database = {
         Args: { p_race_id: string; p_name: string; p_entry_fee?: string | null };
         Returns: Json;
       };
+      register_race_contestant: {
+        Args: {
+          p_race_id: string; p_class_id: string; p_display_name: string;
+          p_order_num?: number; p_racer_id?: string;
+        };
+        Returns: string;
+      };
+      update_race_contestant: {
+        Args: {
+          p_race_id: string; p_result_id: string; p_display_name: string;
+          p_order_num: number; p_racer_id?: string;
+        };
+        Returns: { working_revision: number; published_revision: number }[];
+      };
+      remove_race_contestant: {
+        Args: { p_race_id: string; p_result_id: string };
+        Returns: { working_revision: number; published_revision: number }[];
+      };
       purge_expired_web_analytics: { Args: { p_keep_days?: number }; Returns: number };
     };
     Enums: {

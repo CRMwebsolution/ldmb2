@@ -183,3 +183,31 @@
 
 - No application code changed.
 - No merge or production application deployment was performed.
+
+## 2026-10-12 7:34 PM EDT — Codex
+
+### What it did
+
+- Adapted race-results' individual race contestant registration workflow for LDMB's single permanent track.
+- Added a private Contestant Registration admin page with race/class selection, optional verified-racer linking, automatic next running order, roster editing, scored-entry protection, and direct handoff to pass entry.
+- Added results QR controls to Race Nights and the public spectator results page.
+- The QR image uses `utm_source=local&utm_medium=screen&utm_campaign=results`; the visible and printable text link deliberately contains no campaign parameters.
+- Added an in-dashboard explanation of racer identity linking.
+
+### Database changes
+
+- Re-applied the idempotent race-operations migration through the migration API so the manually-created schema is now recorded as `20261012232859_race_operations`.
+- Renamed its source file to `supabase/migrations/20261012232859_race_operations.sql` to match production history.
+- Applied `20261012233100_contestant_registration` and added `supabase/migrations/20261012233100_contestant_registration.sql`.
+- Added the partial unique index `results_class_racer_unique` to prevent one verified racer identity from being registered twice in the same class.
+- Added admin-checked RPCs `register_race_contestant`, `update_race_contestant`, and `remove_race_contestant`.
+- Registration reuses LDMB's existing `results` roster: new contestants are saved as name/class/order rows with blank passes, so no series, championship, tenant, or SaaS tables were introduced.
+- Removed anonymous EXECUTE grants from the prior race-operation RPCs and the new registration RPCs. Authenticated calls remain guarded by `is_current_race_admin()`.
+- Existing race, class, result, and racer data was preserved.
+
+### Other relevant changes
+
+- Added `qrcode@1.5.4` and `@types/qrcode@1.5.5` for in-browser, first-party QR image generation.
+- Added a focused test for tracked-versus-clean results URLs.
+- Local lint and tests were not run because the workspace command runner still fails before PowerShell starts. Connected preview build verification is pending for this push.
+- No merge or production application deployment was performed. The database migrations were applied to the LDMB Supabase project `shxpqufymaxwvwamlmmz`.

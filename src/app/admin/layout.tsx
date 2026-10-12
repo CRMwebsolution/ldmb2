@@ -17,6 +17,7 @@ import {
   Menu,
   X,
   ShieldCheck,
+  UserPlus,
   Flame,
 } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -24,6 +25,7 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 const navItems = [
   { href: "/admin", label: "Overview", icon: LayoutDashboard },
   { href: "/admin/races", label: "Race Nights", icon: Flag },
+  { href: "/admin/registrations", label: "Contestant Registration", icon: UserPlus },
   { href: "/admin/results", label: "Log Passes & Results", icon: Trophy },
   { href: "/admin/racers", label: "Racer History", icon: ShieldCheck },
   { href: "/admin/heatmaps", label: "Heatmaps", icon: Flame },

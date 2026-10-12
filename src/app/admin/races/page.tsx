@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
+import { SpectatorQR } from "@/components/SpectatorQR";
 import { supabase } from "@/lib/supabase/client";
 import { Race, ClassCatalog, RaceClass } from "@/lib/supabase/types";
 import {
@@ -17,6 +19,7 @@ import {
   ChevronRight,
   Sparkles,
   Save,
+  UserPlus,
 } from "lucide-react";
 
 export default function AdminRacesPage() {
@@ -398,7 +401,21 @@ export default function AdminRacesPage() {
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <Link
+                      href={`/admin/registrations?race=${race.id}`}
+                      className="px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 border transition-colors"
+                      style={{ borderColor: "var(--border)", color: "var(--foreground)" }}
+                    >
+                      <UserPlus className="w-3.5 h-3.5" /> Contestants
+                    </Link>
+
+                    <SpectatorQR
+                      path={`/race-results/${race.slug || race.id}`}
+                      eventName={race.name}
+                      className="px-3.5 py-2 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 border border-amber-600/30 text-amber-700 dark:text-amber-400"
+                    />
+
                     <button
                       onClick={() => openClassSelector(race)}
                       className="px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors"
