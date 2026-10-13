@@ -278,3 +278,36 @@
 - The duplicate Vercel project `ldmb2` again reported “Deployment was blocked”; no build error was reported by the active `ldmb` project.
 - Local automated tests remain unrun because the local command runner is unavailable; focused tests are committed for the next working local/CI runner.
 - Branch remains unmerged and no manual production deployment was performed.
+
+## 2026-10-12 8:35 PM EDT — Codex (GPT-5)
+
+### What it did
+
+- Closed the current LDMB work session and recorded the branch handoff.
+- All combined work remains on `feature/race-ops-first-party-heatmaps`. The branch contains:
+  - additive single-track race-management improvements while preserving LDMB's existing scoring methods;
+  - first-party heatmap analytics and the private Heatmaps dashboard;
+  - contestant registration using the existing results roster;
+  - spectator/admin results QR controls with campaign-tagged QR destinations and clean typed links;
+  - verified racer identities, reviewable historic matching, namesake separation, and linked-racer management.
+- The intentionally excluded work remains excluded: offline scoring, multi-employee/staff roles, alternate scoring methods, series/championship logic, and SaaS/customer/billing infrastructure.
+
+### Database changes
+
+- None in this documentation-only push.
+- Applied migration history for this branch in Supabase project `shxpqufymaxwvwamlmmz`:
+  - `20261012224007_first_party_heatmaps`
+  - `20261012224209_lock_down_heatmap_retention_rpc`
+  - `20261012232859_race_operations`
+  - `20261012233100_contestant_registration`
+  - `20261013001224_racer_identity_link_management`
+- Matching migration files are committed in `supabase/migrations/`; future agents should not manually replay or rename these already-recorded migrations.
+- Existing race/result data was preserved. Racer identity deletion and unlinking preserve every result row and all pass/scoring fields.
+
+### Other relevant changes
+
+- Current pre-handoff branch head: `d3e64fcc8d30cb808af4b167838e152503e1d5a6`.
+- The active Vercel `ldmb` feature-branch build passed; the duplicate `ldmb2` Vercel project reports blocked deployments and is not the active verification target.
+- The required server-only `SUPABASE_SERVICE_ROLE_KEY` was added by the user to local `.env.local`; no secret value was read, logged, or committed.
+- Local lint and Node tests remain unrun because the workspace command runner fails before PowerShell starts. Connected Next.js/Vercel production compilation and TypeScript validation passed, and database lifecycle verification passed in a rolled-back transaction.
+- Work is paused at the user's request. The branch is pushed and intentionally remains unmerged; no manual production website deployment was performed.
