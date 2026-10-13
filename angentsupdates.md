@@ -258,3 +258,23 @@
 - No package or environment-variable changes.
 - The local command runner remained unavailable with `helper_unknown_error: setup refresh had errors`; local lint, tests, and production build could not be run before this push. The pushed preview build will be checked separately.
 - Branch remains `feature/race-ops-first-party-heatmaps`; not merged and not manually deployed to production.
+
+## 2026-10-12 8:17 PM EDT — Codex (GPT-5)
+
+### What it did
+
+- Recorded post-push verification for the historic racer linking work.
+
+### Database changes
+
+- None in this verification push.
+- Transactionally exercised the complete identity lifecycle against an existing result row: create-and-link, rename-and-unlink, relink, and delete identity. The transaction was rolled back after every preservation assertion passed.
+- Rechecked persistent state after rollback: 596 result rows, 0 racer identities, and 0 linked results.
+- Supabase advisors reported no missing-search-path issue on the new functions. The advisor flags authenticated SECURITY DEFINER functions by design; these RPCs are intentionally reachable by signed-in users but independently reject anyone who is not in the existing race-admin allowlist.
+
+### Other relevant changes
+
+- Vercel project `ldmb` completed the feature-branch production build successfully for commit `0e6ac720f03ca850dbf037b8223ba9410b0a9646`.
+- The duplicate Vercel project `ldmb2` again reported “Deployment was blocked”; no build error was reported by the active `ldmb` project.
+- Local automated tests remain unrun because the local command runner is unavailable; focused tests are committed for the next working local/CI runner.
+- Branch remains unmerged and no manual production deployment was performed.
