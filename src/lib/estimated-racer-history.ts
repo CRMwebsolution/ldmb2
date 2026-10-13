@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { formatRaceDate as formatCalendarRaceDate } from "./race-results";
+import { formatRaceDate as formatCalendarRaceDate } from "./race-results.ts";
 
 export interface HistoryRaceRelation {
   id: string;
@@ -13,8 +13,20 @@ export interface HistoryClassRelation {
 }
 
 export interface HistorySourceRow {
+  id: string;
+  racer_id: string | null;
   name: string | null;
   classes: HistoryClassRelation | HistoryClassRelation[] | null;
+}
+
+export interface HistoryResultEntry {
+  resultId: string;
+  racerId: string | null;
+  recordedName: string;
+  className: string;
+  raceId: string;
+  raceName: string;
+  date: string;
 }
 
 export interface EstimatedHistoryEvent {
@@ -22,6 +34,7 @@ export interface EstimatedHistoryEvent {
   raceName: string;
   date: string;
   recordedNames: string[];
+  entries: HistoryResultEntry[];
 }
 
 export interface EstimatedHistoryClass {
@@ -41,6 +54,8 @@ export interface EstimatedRacerSummary extends EstimatedHistory {
 }
 
 interface PreparedHistoryRow {
+  resultId: string;
+  racerId: string | null;
   recordedName: string;
   normalizedName: string;
   className: string;
@@ -93,7 +108,10 @@ function unwrapRelation<T>(value: T | T[] | null): T | null {
   return value;
 }
 
-function prepareRows(rows: HistorySourceRow[]): PreparedHistoryRow[] {
+function prepareRows(
+  rows: HistorySourceRow[],
+  includeFootRunners = false
+): PreparedHistoryRow[] {
   const prepared: PreparedHistoryRow[] = [];
 
   for (const row of rows) {
@@ -106,16 +124,19 @@ function prepareRows(rows: HistorySourceRow[]): PreparedHistoryRow[] {
       : "";
 
     if (
+      !row.id ||
       !recordedName ||
       !normalizedName ||
       !classRelation?.name ||
-      normalizedClassName === "foot runners" ||
+      (!includeFootRunners && normalizedClassName === "foot runners") ||
       !raceRelation?.id
     ) {
       continue;
     }
 
     prepared.push({
+      resultId: row.id,
+      racerId: row.racer_id,
       recordedName,
       normalizedName,
       className: classRelation.name,
@@ -124,6 +145,47 @@ function prepareRows(rows: HistorySourceRow[]): PreparedHistoryRow[] {
   }
 
   return prepared;
+}
+
+function toResultEntry(row: PreparedHistoryRow): HistoryResultEntry {
+  return {
+    resultId: row.resultId,
+    racerId: row.racerId,
+    recordedName: row.recordedName,
+    className: row.className,
+    raceId: row.race.id,
+    raceName: row.race.name,
+    date: row.race.date,
+  };
+}
+
+export function buildHistoryResultEntries(
+  rows: HistorySourceRow[]
+): HistoryResultEntry[] {
+  const entries: HistoryResultEntry[] = [];
+
+  for (const row of rows) {
+    const classRelation = unwrapRelation(row.classes);
+    const raceRelation = classRelation ? unwrapRelation(classRelation.races) : null;
+    if (!row.id || !classRelation?.name || !raceRelation?.id) continue;
+
+    entries.push({
+      resultId: row.id,
+      racerId: row.racer_id,
+      recordedName: row.name?.trim() || "(blank recorded name)",
+      className: classRelation.name,
+      raceId: raceRelation.id,
+      raceName: raceRelation.name,
+      date: raceRelation.date,
+    });
+  }
+
+  return entries.sort(
+    (a, b) =>
+      new Date(b.date).getTime() - new Date(a.date).getTime() ||
+      a.className.localeCompare(b.className) ||
+      a.recordedName.localeCompare(b.recordedName)
+  );
 }
 
 function buildHistoryFromNames(
@@ -150,12 +212,14 @@ function buildHistoryFromNames(
       if (!existingEvent.recordedNames.includes(row.recordedName)) {
         existingEvent.recordedNames.push(row.recordedName);
       }
+      existingEvent.entries.push(toResultEntry(row));
     } else {
       group.events.set(row.race.id, {
         raceId: row.race.id,
         raceName: row.race.name,
         date: row.race.date,
         recordedNames: [row.recordedName],
+        entries: [toResultEntry(row)],
       });
     }
 
@@ -301,6 +365,12 @@ export function buildRacerLeaderboard(rows: HistorySourceRow[]): EstimatedRacerS
   );
 }
 
+export function buildUnlinkedRacerLeaderboard(
+  rows: HistorySourceRow[]
+): EstimatedRacerSummary[] {
+  return buildRacerLeaderboard(rows.filter((row) => !row.racer_id));
+}
+
 function getRaceYear(value: string): number | null {
   const leadingYear = /^(\d{4})-/.exec(value)?.[1];
   if (leadingYear) return Number(leadingYear);
@@ -370,6 +440,8 @@ export async function fetchHistoryRows(
     const { data, error } = await client
       .from("results")
       .select(`
+        id,
+        racer_id,
         name,
         classes!inner (
           name,

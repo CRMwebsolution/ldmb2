@@ -231,3 +231,30 @@
 - A live add/edit/remove contestant mutation was not performed because the preview domain did not have an authenticated admin session; no production result rows were created or modified during testing.
 - Local lint and Node tests remain unrun because the workspace command runner still fails before PowerShell starts.
 - No merge or production application deployment was performed.
+
+## 2026-10-12 8:14 PM EDT — Codex (GPT-5)
+
+### What it did
+
+- Reworked the Racer History admin page into separate **Historic Estimated Matches** and **Linked Racers** tabs.
+- Added a review-before-link workflow that exposes the exact historic result entries behind each fuzzy estimate. Admins can uncheck races that belong to another person before creating or selecting a racer identity.
+- Changed the estimated list to contain only unlinked results. After entries for a short name such as “Rhett” are linked, unchecked entries such as “Rhett Hinkle” remain unlinked and reappear as a separate estimated identity.
+- Added linked-racer management for viewing exact race/class/name associations, renaming identities, adding identities, unlinking incorrectly matched races, and deleting identities.
+- Added focused history tests covering exact result IDs, namesake separation, and linked classes that are intentionally excluded from driver estimates.
+
+### Database changes
+
+- Added migration `supabase/migrations/20261013001224_racer_identity_link_management.sql`.
+- Added admin-only functions `create_racer_identity`, `link_race_results_to_racer`, `save_racer_identity`, and `delete_racer_identity`.
+- All four functions require the existing race-admin check, use fixed search paths, deny anonymous execution, and grant execution only to authenticated users.
+- Link/unlink operations advance affected race revisions and snapshots through the existing `_advance_race_revision` helper.
+- Identity deletion explicitly clears `results.racer_id` and then deletes only the `racers` row. None of these functions contain or perform a result-row deletion.
+- Applied the migration to Supabase project `shxpqufymaxwvwamlmmz`.
+- Verified after migration: all 596 existing result rows remain present, all remain unlinked, no racer identity rows were added, and the new function ACLs exclude anonymous users.
+
+### Other relevant changes
+
+- Updated generated application database types for the four racer identity RPCs.
+- No package or environment-variable changes.
+- The local command runner remained unavailable with `helper_unknown_error: setup refresh had errors`; local lint, tests, and production build could not be run before this push. The pushed preview build will be checked separately.
+- Branch remains `feature/race-ops-first-party-heatmaps`; not merged and not manually deployed to production.

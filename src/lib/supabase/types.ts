@@ -342,6 +342,22 @@ export type Database = {
         Args: { p_race_id: string; p_result_id: string };
         Returns: { working_revision: number; published_revision: number }[];
       };
+      create_racer_identity: {
+        Args: { p_display_name: string; p_result_ids?: string[] };
+        Returns: string;
+      };
+      link_race_results_to_racer: {
+        Args: { p_racer_id: string; p_result_ids: string[] };
+        Returns: number;
+      };
+      save_racer_identity: {
+        Args: { p_racer_id: string; p_display_name: string; p_result_ids: string[] };
+        Returns: number;
+      };
+      delete_racer_identity: {
+        Args: { p_racer_id: string };
+        Returns: number;
+      };
       purge_expired_web_analytics: { Args: { p_keep_days?: number }; Returns: number };
     };
     Enums: {
