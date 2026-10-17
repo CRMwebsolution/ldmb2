@@ -375,3 +375,19 @@
 - Verified all 20 unit tests pass (`npm test`).
 - Verified clean production build (`npm run build`) with zero TypeScript errors across all 27 routes.
 - Pushed to branch `fix/results-auto-save-on-blur` for manual review (`main` remains untouched).
+
+## 2026-10-17 12:35 PM EDT — Antigravity (Gemini 4 Argon)
+
+### What it did
+
+- Merged `fix/results-auto-save-on-blur` into `main` and pushed `main` to `origin/main`.
+- Includes instant auto-save on blur (`onBlur`) with live Supabase Realtime broadcast in `/admin/results`, plus local clickable column-header sorting (`#`, `1st Pass`, `2nd Pass`, `Best Pass`, `Consistency`) for both spectators (`/race-results/[raceId]` and `/race-results/[raceId]/pit`) and admin (`/admin/results`).
+
+### Database changes
+
+- None.
+
+### Other relevant changes
+
+- Pre-merge verification passed: `npm test` (20/20 unit tests passed) and `npm run build` (Next.js 16.3.6 production build and TypeScript check passed across all 27 routes).
+- Pushing `main` triggers the connected Vercel production deployment for `ldmb`.
