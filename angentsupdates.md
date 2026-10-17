@@ -311,3 +311,24 @@
 - The required server-only `SUPABASE_SERVICE_ROLE_KEY` was added by the user to local `.env.local`; no secret value was read, logged, or committed.
 - Local lint and Node tests remain unrun because the workspace command runner fails before PowerShell starts. Connected Next.js/Vercel production compilation and TypeScript validation passed, and database lifecycle verification passed in a rolled-back transaction.
 - Work is paused at the user's request. The branch is pushed and intentionally remains unmerged; no manual production website deployment was performed.
+
+## 2026-10-16 9:51 PM EDT — Antigravity (Gemini 4 Argon)
+
+### What it did
+
+- Verified that the first-party heatmap collector (`src/components/FirstPartyAnalytics.tsx`) and privacy policy (`src/app/privacy/page.tsx`) operate automatically without any consent/permission popup.
+- Installed dependencies (`npm ci`), ran all unit tests (`npm test`, 19/19 passed), and verified a clean local production build (`npm run build`) including Next.js compilation and TypeScript type checking.
+- Fast-forward merged `feature/race-ops-first-party-heatmaps` into `main` and pushed `main` to `origin/main`.
+
+### Database changes
+
+- None. (The five migrations on `feature/race-ops-first-party-heatmaps` were already applied to Supabase project `shxpqufymaxwvwamlmmz` on 2026-10-12.)
+
+### Other relevant changes
+
+- `npm test`: 19/19 tests passed.
+- `npm run build`: Next.js 16.3.6 production build and TypeScript check passed cleanly across all 27 static/dynamic routes.
+- `npm run lint`: Ran ESLint; pre-existing React 19 hook/any lint rules across admin/component files were noted and left untouched to avoid unrelated scope expansion.
+- Confirmed `.env.local` remains gitignored and uncommitted.
+- Pushing `main` triggers the connected Vercel production deployment for `ldmb`.
+
