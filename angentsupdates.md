@@ -332,3 +332,25 @@
 - Confirmed `.env.local` remains gitignored and uncommitted.
 - Pushing `main` triggers the connected Vercel production deployment for `ldmb`.
 
+
+## 2026-10-17 12:05 PM EDT — Antigravity (Gemini 3.8 Flash)
+
+### What it did
+
+- Added instant auto-save on blur (`onBlur`) to the live results pass editor in `src/app/admin/results/page.tsx`.
+- Editing a racer name, pass 1 (`first_half`), pass 2 (`second_half`), or selecting a linked identity now immediately validates, recalculates `fastest` and `consistency`, and upserts directly to `public.results` in Supabase when navigating away or pressing Tab.
+- Because `public.results` is listened to by Supabase Realtime, pass entries immediately propagate to spectator live views (`/race-results/[raceId]` and `/race-results/[raceId]/pit`) without needing manual intervention or full page reload.
+- Blank rows that previously had persisted results are safely cleaned up/deleted from `public.results` on blur.
+- Added auto-save on blur/change for class names and class scoring modes (`display_mode`).
+- Added a live auto-save visual indicator (`⚡ Saved pass for [Driver]`) and saving row indicator in the dashboard header.
+- Retained the existing `Save All` button and `Ctrl+S` shortcut as a safe manual backup.
+
+### Database changes
+
+- None. Direct row upsert and delete operations utilize existing RLS policies (`Race admins can update results`, `Race admins can insert results`, `Race admins can delete results`).
+
+### Other relevant changes
+
+- Verified all 19 unit tests pass (`npm test`).
+- Verified clean production build (`npm run build`) with zero TypeScript errors across all 27 routes.
+- Branch: `fix/results-auto-save-on-blur`.

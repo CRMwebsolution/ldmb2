@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import { ArrowDown, ArrowUp, ChevronDown, ChevronUp, FileDown, FileSpreadsheet, Plus, RefreshCw, Save, Trophy } from "lucide-react";
 import { supabase } from "@/lib/supabase/client";
 import type { Race, RaceClass, RaceResult, Racer } from "@/lib/supabase/types";
 import { buildRaceSavePayload, addBlankRows, prepareRaceEditor, type EditableClass, type EditableResult } from "@/lib/race-editor";
-import { computeRaceMetrics, formatPass, hasRecordedPass, isBlankResult } from "@/lib/race-results";
+import { computeRaceMetrics, formatPass, hasRecordedPass, isBlankResult, isValidPassInput } from "@/lib/race-results";
 import { todayAtTrack } from "@/lib/race-schedule";
 import { generateRacePdf } from "@/lib/generate-race-pdf";
 import { downloadRaceCsv } from "@/lib/race-csv";
@@ -111,6 +111,11 @@ export default function AdminResultsPage() {
     setSelectedRaceId(id);
   }
 
+  const classesRef = useRef<EditableClass[]>(classes);
+  classesRef.current = classes;
+  const [savingRowId, setSavingRowId] = useState<string | null>(null);
+  const [autoSaveStatus, setAutoSaveStatus] = useState<string>("");
+
   function changeClass(id: string, patch: Partial<Pick<EditableClass, "name" | "display_mode">>) {
     setClasses((previous) => previous.map((cls) => cls.id === id ? { ...cls, ...patch } : cls));
     setDirty(true);
@@ -128,6 +133,107 @@ export default function AdminResultsPage() {
     }));
     setDirty(true);
     setMessage(null);
+  }
+
+  async function handleBlurRow(classId: string, rowId: string, explicitRacerId?: string) {
+    const cls = classesRef.current.find((c) => c.id === classId);
+    if (!cls) return;
+    const row = cls.results.find((r) => r.id === rowId);
+    if (!row) return;
+
+    const racerIdValue = explicitRacerId !== undefined ? (explicitRacerId || null) : (row.racer_id || null);
+
+    // If completely blank:
+    if (isBlankResult(row)) {
+      if (row.persisted) {
+        setSavingRowId(row.id);
+        try {
+          const { error } = await supabase.from("results").delete().eq("id", row.id);
+          if (error) throw error;
+          setClasses((prev) => prev.map((c) => c.id !== classId ? c : {
+            ...c,
+            results: c.results.map((r) => r.id === row.id ? { ...r, persisted: false } : r),
+          }));
+          setAutoSaveStatus("Removed empty pass");
+        } catch (err: any) {
+          console.error("Auto-delete blank failed", err);
+        } finally {
+          setSavingRowId(null);
+        }
+      }
+      return;
+    }
+
+    // Check pass format validation
+    if (![row.first_half, row.second_half].every(isValidPassInput)) {
+      setMessage({ error: true, text: `Check pass format for "${row.name || "entry"}" (use seconds, feet, or DQ).` });
+      return;
+    }
+
+    const first = row.first_half?.trim() || null;
+    const second = row.second_half?.trim() || null;
+    const metrics = computeRaceMetrics(first, second);
+
+    setSavingRowId(row.id);
+    setAutoSaveStatus(`Saving pass for ${row.name || "entry"}...`);
+
+    try {
+      const payload = {
+        id: row.id,
+        class_id: classId,
+        order_num: row.order_num || 1,
+        name: row.name?.trim() || null,
+        first_half: first,
+        second_half: second,
+        fastest: metrics.fastest,
+        consistency: metrics.consistency,
+        racer_id: racerIdValue,
+        updated_at: new Date().toISOString(),
+      };
+
+      const { error } = await supabase.from("results").upsert(payload, { onConflict: "id" });
+      if (error) throw error;
+
+      // Mark row as persisted in state
+      setClasses((prev) => prev.map((c) => c.id !== classId ? c : {
+        ...c,
+        results: c.results.map((r) => r.id === row.id ? { ...r, ...payload, persisted: true } : r),
+      }));
+
+      setAutoSaveStatus(`Saved pass for ${row.name || "entry"}`);
+      setMessage(null);
+      setDirty(false);
+    } catch (err: any) {
+      console.error("Auto-save pass failed", err);
+      setMessage({ error: true, text: `Auto-save failed: ${err.message || "Could not save pass"}` });
+      setAutoSaveStatus("Error auto-saving");
+    } finally {
+      setSavingRowId(null);
+    }
+  }
+
+  async function handleBlurClassName(classId: string, name: string) {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    try {
+      const { error } = await supabase.from("classes").update({ name: trimmed }).eq("id", classId);
+      if (error) throw error;
+      setAutoSaveStatus(`Saved class name: ${trimmed}`);
+      setDirty(false);
+    } catch (err: any) {
+      console.error("Save class name failed", err);
+    }
+  }
+
+  async function handleBlurDisplayMode(classId: string, mode: string) {
+    try {
+      const { error } = await supabase.from("classes").update({ display_mode: mode }).eq("id", classId);
+      if (error) throw error;
+      setAutoSaveStatus("Saved scoring mode");
+      setDirty(false);
+    } catch (err: any) {
+      console.error("Save scoring mode failed", err);
+    }
   }
 
   function moveClass(index: number, direction: -1 | 1) {
@@ -279,10 +385,16 @@ export default function AdminResultsPage() {
       </button>
     </div>
 
-    <p className="text-sm" role="status" style={{ color: hasPendingChanges ? "var(--primary)" : "var(--muted-fg)" }}>
-      {dirty ? "Unsaved changes. Save All after entering passes to update published results."
-        : staleBlankIds.length ? "Stored empty rows can be cleaned with Save All." : "All changes saved."}
-    </p>
+    <div className="flex items-center justify-between flex-wrap gap-2 text-sm">
+      <p role="status" style={{ color: autoSaveStatus.includes("Error") || autoSaveStatus.includes("failed") ? "#dc2626" : "var(--primary)" }}>
+        {autoSaveStatus ? `⚡ ${autoSaveStatus}` : dirty ? "Changes entered. Click off or press Tab to auto-save to live site." : "All changes saved live."}
+      </p>
+      {savingRowId && (
+        <span className="text-xs text-amber-600 font-semibold animate-pulse">
+          Saving pass live...
+        </span>
+      )}
+    </div>
     {message && <p role={message.error ? "alert" : "status"} className="rounded-lg border p-3 text-sm"
       style={{ borderColor: message.error ? "#dc2626" : "#16a34a" }}>{message.text}</p>}
 
@@ -291,7 +403,7 @@ export default function AdminResultsPage() {
         This race has no classes. <Link href="/admin/races" className="font-bold underline" style={{ color: "var(--primary)" }}>Add active classes in Race Nights</Link>.
       </div> : <div className="space-y-5">
         <p className="text-sm" style={{ color: "var(--muted-fg)" }}>
-          Each class starts with 20 editable rows. Use +5 to make room for more drivers. Manage the class roster in <Link href="/admin/races" className="underline">Race Nights</Link>.
+          Each class starts with 20 editable rows. Use +5 to make room for more drivers. Passes auto-save to the live site as soon as you click off or press Tab.
         </p>
         <fieldset disabled={saving} className="space-y-5">
           {classes.map((cls, classIndex) => {
@@ -309,7 +421,12 @@ export default function AdminResultsPage() {
                     onClick={() => moveClass(classIndex, -1)} className="p-2 rounded border disabled:opacity-30" style={{ borderColor: "var(--border)" }}><ArrowUp className="w-4 h-4" /></button>
                   <button type="button" aria-label={`Move ${cls.name} down`} title="Move class down" disabled={classIndex === classes.length - 1}
                     onClick={() => moveClass(classIndex, 1)} className="p-2 rounded border disabled:opacity-30" style={{ borderColor: "var(--border)" }}><ArrowDown className="w-4 h-4" /></button>
-                  <select aria-label={`Scoring mode for ${cls.name}`} value={cls.display_mode} onChange={(event) => changeClass(cls.id, { display_mode: event.target.value })}
+                  <select aria-label={`Scoring mode for ${cls.name}`} value={cls.display_mode}
+                    onChange={(event) => {
+                      const mode = event.target.value as any;
+                      changeClass(cls.id, { display_mode: mode });
+                      void handleBlurDisplayMode(cls.id, mode);
+                    }}
                     className="rounded border px-2 py-1 text-sm" style={{ background: "var(--surface)", borderColor: "var(--border)" }}>
                     <option value="fastest">Best Pass</option><option value="consistency">Consistency</option><option value="both">Both</option>
                   </select>
@@ -321,7 +438,9 @@ export default function AdminResultsPage() {
               </div>
               {!closed && <div className="p-4">
                 <label className="block text-xs font-bold mb-3">Race class name
-                  <input value={cls.name} onChange={(event) => changeClass(cls.id, { name: event.target.value })}
+                  <input value={cls.name}
+                    onChange={(event) => changeClass(cls.id, { name: event.target.value })}
+                    onBlur={() => void handleBlurClassName(cls.id, cls.name)}
                     className="block mt-1 rounded border px-3 py-2 w-full max-w-sm" style={{ background: "var(--muted)", borderColor: "var(--border)" }} />
                 </label>
                 <div className="overflow-x-auto">
@@ -334,13 +453,20 @@ export default function AdminResultsPage() {
                     <tbody>{cls.results.map((row, rowIndex) => <tr key={row.id} className="border-t" style={{ borderColor: "var(--border)" }}>
                       <td className="p-2" style={{ color: "var(--muted-fg)" }}>{rowIndex + 1}</td>
                       {(["name", "first_half", "second_half"] as const).map((field) => <td key={field} className="p-1">
-                        <input value={row[field] || ""} onChange={(event) => changeRow(cls.id, row.id, field, event.target.value)}
+                        <input value={row[field] || ""}
+                          onChange={(event) => changeRow(cls.id, row.id, field, event.target.value)}
+                          onBlur={() => void handleBlurRow(cls.id, row.id)}
                           aria-label={`${cls.name} row ${rowIndex + 1} ${field === "name" ? "racer" : field === "first_half" ? "first pass" : "second pass"}`}
                           placeholder={field === "name" ? "Name" : "Time, ft, or DQ"}
                           className="w-full rounded border px-2 py-2 font-mono" style={{ background: "var(--surface)", borderColor: "var(--border)" }} />
                       </td>)}
                       <td className="p-1">
-                        <select value={row.racer_id || ""} onChange={(event) => changeRow(cls.id, row.id, "racer_id", event.target.value)}
+                        <select value={row.racer_id || ""}
+                          onChange={(event) => {
+                            const val = event.target.value;
+                            changeRow(cls.id, row.id, "racer_id", val);
+                            void handleBlurRow(cls.id, row.id, val);
+                          }}
                           aria-label={`Linked identity for ${row.name || `row ${rowIndex + 1}`}`}
                           className="w-full rounded border px-2 py-2 text-xs" style={{ background: "var(--surface)", borderColor: "var(--border)" }}>
                           <option value="">Unlinked</option>
