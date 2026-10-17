@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   computeRaceMetrics, compareBestPass, formatPass, hasRecordedPass,
-  isValidPassInput, sortClassResults,
+  isValidPassInput, sortClassResults, sortResultsByColumn, toggleResultSort,
 } from "../src/lib/race-results.ts";
 import { raceStartIso, todayAtTrack } from "../src/lib/race-schedule.ts";
 import { buildRaceSavePayload, prepareRaceEditor } from "../src/lib/race-editor.ts";
@@ -156,3 +156,38 @@ test("zero and negative numeric passes are rejected without changing supported s
   assert.equal(isValidPassInput("-1.25"), false);
   assert.deepEqual(computeRaceMetrics("0", "9.250"), { fastest: "9.250", consistency: null });
 });
+
+test("local column sorting orders by order_num, 1st pass, 2nd pass, fastest, and consistency while keeping blanks at bottom", () => {
+  const rows = [
+    { id: "blank", order_num: 1, name: "", first_half: "", second_half: "", fastest: null, consistency: null },
+    { id: "r1", order_num: 2, name: "Driver 1", first_half: "5.200", second_half: "5.100", fastest: "5.100", consistency: 0.1 },
+    { id: "r2", order_num: 3, name: "Driver 2", first_half: "4.800", second_half: "5.500", fastest: "4.800", consistency: 0.7 },
+    { id: "r3", order_num: 4, name: "Driver 3", first_half: "120ft", second_half: "4.900", fastest: "4.900", consistency: null },
+    { id: "r4", order_num: 5, name: "Driver 4", first_half: "DQ", second_half: "", fastest: null, consistency: null },
+  ];
+
+  // Order asc & desc
+  assert.deepEqual(sortResultsByColumn(rows, { column: "order", direction: "asc" }).map((r) => r.id), ["r1", "r2", "r3", "r4", "blank"]);
+  assert.deepEqual(sortResultsByColumn(rows, { column: "order", direction: "desc" }).map((r) => r.id), ["r4", "r3", "r2", "r1", "blank"]);
+
+  // 1st pass asc & desc (valid passes first, then DQ, then blank)
+  assert.deepEqual(sortResultsByColumn(rows, { column: "first_half", direction: "asc" }).map((r) => r.id), ["r2", "r1", "r3", "r4", "blank"]);
+  assert.deepEqual(sortResultsByColumn(rows, { column: "first_half", direction: "desc" }).map((r) => r.id), ["r3", "r1", "r2", "r4", "blank"]);
+
+  // 2nd pass asc
+  assert.deepEqual(sortResultsByColumn(rows, { column: "second_half", direction: "asc" }).map((r) => r.id), ["r3", "r1", "r2", "r4", "blank"]);
+
+  // Fastest pass asc
+  assert.deepEqual(sortResultsByColumn(rows, { column: "fastest", direction: "asc" }).map((r) => r.id), ["r2", "r3", "r1", "r4", "blank"]);
+
+  // Consistency asc & desc
+  assert.deepEqual(sortResultsByColumn(rows, { column: "consistency", direction: "asc" }).map((r) => r.id), ["r1", "r2", "r3", "r4", "blank"]);
+  assert.deepEqual(sortResultsByColumn(rows, { column: "consistency", direction: "desc" }).map((r) => r.id), ["r2", "r1", "r3", "r4", "blank"]);
+
+  // Toggle helper
+  const s1 = toggleResultSort(undefined, "first_half", "order");
+  assert.deepEqual(s1, { column: "first_half", direction: "asc" });
+  const s2 = toggleResultSort(s1, "first_half", "order");
+  assert.deepEqual(s2, { column: "first_half", direction: "desc" });
+});
+

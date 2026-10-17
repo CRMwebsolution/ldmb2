@@ -3,10 +3,19 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, ChevronDown, ChevronUp, MonitorUp } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowUp, ArrowUpDown, ChevronDown, ChevronUp, MonitorUp } from "lucide-react";
 import { supabase } from "@/lib/supabase/client";
 import type { Race, RaceClass, RaceResult } from "@/lib/supabase/types";
-import { formatPass, formatRaceDate, sortClassResults } from "@/lib/race-results";
+import {
+  formatPass,
+  formatRaceDate,
+  isBlankResult,
+  sortClassResults,
+  sortResultsByColumn,
+  toggleResultSort,
+  type ResultSortColumn,
+  type ResultSortState,
+} from "@/lib/race-results";
 import { todayAtTrack } from "@/lib/race-schedule";
 import { generateRacePdf } from "@/lib/generate-race-pdf";
 import { SpectatorQR } from "@/components/SpectatorQR";
@@ -19,6 +28,7 @@ export default function RaceResultsDetail() {
   const [race, setRace] = useState<Race | null>(null);
   const [classes, setClasses] = useState<ClassWithResults[]>([]);
   const [collapsed, setCollapsed] = useState<string[]>([]);
+  const [classSorts, setClassSorts] = useState<Record<string, ResultSortState>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [realtimeRevision, setRealtimeRevision] = useState(0);
@@ -67,10 +77,16 @@ export default function RaceResultsDetail() {
         if (!active) return;
         setError("");
         setRace(event);
-        setClasses((raceClasses || []).map((item) => ({
-          ...item,
-          results: sortClassResults(rows.filter((row) => row.class_id === item.id), item.display_mode),
-        })));
+        setClasses((raceClasses || []).map((item) => {
+          const populated = rows
+            .filter((row) => row.class_id === item.id && !isBlankResult(row))
+            .sort((a, b) => (a.order_num ?? Infinity) - (b.order_num ?? Infinity))
+            .map((row, index) => ({ ...row, order_num: row.order_num ?? index + 1 }));
+          return {
+            ...item,
+            results: sortClassResults(populated, item.display_mode),
+          };
+        }));
       } catch (err) {
         console.error("Could not load race results", err);
         if (active && initial) setError("Results could not be loaded. Please try again later.");
@@ -98,6 +114,20 @@ export default function RaceResultsDetail() {
     return () => { void supabase.removeChannel(channel); };
   }, [race?.id]);
 
+  function handleSortHeader(classId: string, column: ResultSortColumn, defaultColumn: ResultSortColumn) {
+    setClassSorts((prev) => ({
+      ...prev,
+      [classId]: toggleResultSort(prev[classId], column, defaultColumn),
+    }));
+  }
+
+  function renderSortIcon(activeSort: ResultSortState, column: ResultSortColumn) {
+    if (activeSort.column !== column) return <ArrowUpDown className="w-3.5 h-3.5 opacity-40 shrink-0" />;
+    return activeSort.direction === "asc"
+      ? <ArrowUp className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--primary)" }} />
+      : <ArrowDown className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--primary)" }} />;
+  }
+
   return <div className="max-w-6xl mx-auto px-4 py-12">
     <Link href="/race-results" className="inline-flex gap-2 items-center text-sm font-bold mb-7" style={{ color: "var(--primary)" }}>
       <ArrowLeft className="w-4 h-4" /> All race results
@@ -107,7 +137,7 @@ export default function RaceResultsDetail() {
         <span className="text-xs font-bold uppercase tracking-widest" style={{ color: "var(--primary)" }}>Official race results</span>
         <h1 className="text-4xl sm:text-5xl font-black mt-2">{race.name}</h1>
         <p className="mt-2" style={{ color: "var(--muted-fg)" }}>{formatRaceDate(race.date)}</p>
-        <p className="mt-1 text-xs" style={{ color: "var(--muted-fg)" }}>Published passes refresh automatically while this page is open, every few seconds on race day.</p>
+        <p className="mt-1 text-xs" style={{ color: "var(--muted-fg)" }}>Published passes refresh automatically while this page is open, every few seconds on race day. Click any column header to sort.</p>
         <div className="mt-4 flex flex-wrap gap-2">
           {classes.length > 0 && <>
             <button type="button" onClick={() => generateRacePdf(race, classes)}
@@ -126,6 +156,10 @@ export default function RaceResultsDetail() {
           const closed = collapsed.includes(item.id);
           const showBest = item.display_mode !== "consistency";
           const showConsistency = item.display_mode !== "fastest";
+          const defaultColumn: ResultSortColumn = item.display_mode === "consistency" ? "consistency" : "fastest";
+          const activeSort: ResultSortState = classSorts[item.id] ?? { column: defaultColumn, direction: "asc" };
+          const sortedResults = sortResultsByColumn(item.results, activeSort, item.display_mode);
+
           return <section key={item.id} className="rounded-2xl border overflow-hidden" style={{ background: "var(--surface)", borderColor: "var(--border)" }}>
             <button type="button" className="w-full p-5 flex justify-between items-center text-left" aria-expanded={!closed}
               onClick={() => setCollapsed((prev) => closed ? prev.filter((id) => id !== item.id) : [...prev, item.id])}>
@@ -133,14 +167,52 @@ export default function RaceResultsDetail() {
               {closed ? <ChevronDown /> : <ChevronUp />}
             </button>
             {!closed && <div className="overflow-x-auto border-t" style={{ borderColor: "var(--border)" }}>
-              {item.results.length === 0 ? <p className="p-5 text-sm">No entries recorded in this class.</p> : <table className="w-full min-w-[580px] text-sm">
+              {sortedResults.length === 0 ? <p className="p-5 text-sm">No entries recorded in this class.</p> : <table className="w-full min-w-[580px] text-sm">
                 <thead style={{ background: "var(--muted)" }}><tr>
+                  <th className="text-left p-3 w-16" aria-sort={activeSort.column === "order" ? (activeSort.direction === "asc" ? "ascending" : "descending") : "none"}>
+                    <button type="button" onClick={() => handleSortHeader(item.id, "order", defaultColumn)}
+                      className="inline-flex items-center gap-1 font-bold hover:opacity-80 cursor-pointer select-none"
+                      title="Sort by order number">
+                      <span>#</span>
+                      {renderSortIcon(activeSort, "order")}
+                    </button>
+                  </th>
                   <th className="text-left p-3">Name</th>
-                  <th className="text-right p-3">1st Pass</th><th className="text-right p-3">2nd Pass</th>
-                  {showBest && <th className="text-right p-3">Best Pass</th>}
-                  {showConsistency && <th className="text-right p-3">Consistency</th>}
+                  <th className="text-right p-3" aria-sort={activeSort.column === "first_half" ? (activeSort.direction === "asc" ? "ascending" : "descending") : "none"}>
+                    <button type="button" onClick={() => handleSortHeader(item.id, "first_half", defaultColumn)}
+                      className="inline-flex items-center justify-end gap-1 font-bold hover:opacity-80 cursor-pointer select-none ml-auto"
+                      title="Sort by 1st Pass">
+                      <span>1st Pass</span>
+                      {renderSortIcon(activeSort, "first_half")}
+                    </button>
+                  </th>
+                  <th className="text-right p-3" aria-sort={activeSort.column === "second_half" ? (activeSort.direction === "asc" ? "ascending" : "descending") : "none"}>
+                    <button type="button" onClick={() => handleSortHeader(item.id, "second_half", defaultColumn)}
+                      className="inline-flex items-center justify-end gap-1 font-bold hover:opacity-80 cursor-pointer select-none ml-auto"
+                      title="Sort by 2nd Pass">
+                      <span>2nd Pass</span>
+                      {renderSortIcon(activeSort, "second_half")}
+                    </button>
+                  </th>
+                  {showBest && <th className="text-right p-3" aria-sort={activeSort.column === "fastest" ? (activeSort.direction === "asc" ? "ascending" : "descending") : "none"}>
+                    <button type="button" onClick={() => handleSortHeader(item.id, "fastest", defaultColumn)}
+                      className="inline-flex items-center justify-end gap-1 font-bold hover:opacity-80 cursor-pointer select-none ml-auto"
+                      title="Sort by Best Pass">
+                      <span>Best Pass</span>
+                      {renderSortIcon(activeSort, "fastest")}
+                    </button>
+                  </th>}
+                  {showConsistency && <th className="text-right p-3" aria-sort={activeSort.column === "consistency" ? (activeSort.direction === "asc" ? "ascending" : "descending") : "none"}>
+                    <button type="button" onClick={() => handleSortHeader(item.id, "consistency", defaultColumn)}
+                      className="inline-flex items-center justify-end gap-1 font-bold hover:opacity-80 cursor-pointer select-none ml-auto"
+                      title="Sort by Consistency">
+                      <span>Consistency</span>
+                      {renderSortIcon(activeSort, "consistency")}
+                    </button>
+                  </th>}
                 </tr></thead>
-                <tbody>{item.results.map((row) => <tr key={row.id} className="border-t" style={{ borderColor: "var(--border)" }}>
+                <tbody>{sortedResults.map((row, index) => <tr key={row.id} className="border-t" style={{ borderColor: "var(--border)" }}>
+                  <td className="p-3 font-mono text-xs" style={{ color: "var(--muted-fg)" }}>{row.order_num ?? index + 1}</td>
                   <td className="p-3 font-semibold">{row.name?.trim() || "—"}</td>
                   <td className="p-3 text-right font-mono">{formatPass(row.first_half)}</td>
                   <td className="p-3 text-right font-mono">{formatPass(row.second_half)}</td>

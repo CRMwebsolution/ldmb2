@@ -3,10 +3,19 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Maximize2, Radio } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowUp, ArrowUpDown, Maximize2, Radio } from "lucide-react";
 import { supabase } from "@/lib/supabase/client";
 import type { Race, RaceClass, RaceResult } from "@/lib/supabase/types";
-import { formatPass, formatRaceDate, sortClassResults } from "@/lib/race-results";
+import {
+  formatPass,
+  formatRaceDate,
+  isBlankResult,
+  sortClassResults,
+  sortResultsByColumn,
+  toggleResultSort,
+  type ResultSortColumn,
+  type ResultSortState,
+} from "@/lib/race-results";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 type PitClass = RaceClass & { results: RaceResult[] };
@@ -16,6 +25,7 @@ export default function PitDisplayPage() {
   const [race, setRace] = useState<Race | null>(null);
   const [classes, setClasses] = useState<PitClass[]>([]);
   const [selected, setSelected] = useState(0);
+  const [classSorts, setClassSorts] = useState<Record<string, ResultSortState>>({});
   const [revision, setRevision] = useState(0);
   const [error, setError] = useState("");
 
@@ -42,10 +52,16 @@ export default function PitDisplayPage() {
         }
         if (!active) return;
         setRace(event);
-        setClasses((raceClasses || []).map((item) => ({
-          ...item,
-          results: sortClassResults(rows.filter((row) => row.class_id === item.id), item.display_mode),
-        })));
+        setClasses((raceClasses || []).map((item) => {
+          const populated = rows
+            .filter((row) => row.class_id === item.id && !isBlankResult(row))
+            .sort((a, b) => (a.order_num ?? Infinity) - (b.order_num ?? Infinity))
+            .map((row, index) => ({ ...row, order_num: row.order_num ?? index + 1 }));
+          return {
+            ...item,
+            results: sortClassResults(populated, item.display_mode),
+          };
+        }));
         setError("");
       } catch {
         if (active) setError("Live results are temporarily unavailable.");
@@ -77,7 +93,28 @@ export default function PitDisplayPage() {
   }, [classes.length, selected]);
 
   const current = classes[selected];
-  const rows = useMemo(() => current?.results.slice(0, 12) || [], [current]);
+  const defaultColumn: ResultSortColumn = current?.display_mode === "consistency" ? "consistency" : "fastest";
+  const activeSort: ResultSortState = current ? (classSorts[current.id] ?? { column: defaultColumn, direction: "asc" }) : { column: "fastest", direction: "asc" };
+
+  const rows = useMemo(() => {
+    if (!current) return [];
+    return sortResultsByColumn(current.results, activeSort, current.display_mode).slice(0, 12);
+  }, [current, activeSort]);
+
+  function handleSortHeader(column: ResultSortColumn) {
+    if (!current) return;
+    setClassSorts((prev) => ({
+      ...prev,
+      [current.id]: toggleResultSort(prev[current.id], column, defaultColumn),
+    }));
+  }
+
+  function renderSortIcon(column: ResultSortColumn) {
+    if (activeSort.column !== column) return <ArrowUpDown className="w-4 h-4 opacity-40 shrink-0" />;
+    return activeSort.direction === "asc"
+      ? <ArrowUp className="w-4 h-4 text-amber-400 shrink-0" />
+      : <ArrowDown className="w-4 h-4 text-amber-400 shrink-0" />;
+  }
 
   return <div className="min-h-[calc(100vh-4rem)] bg-slate-950 text-white p-4 sm:p-7">
     <header className="flex flex-wrap items-start justify-between gap-4 border-b border-white/15 pb-5">
@@ -103,13 +140,35 @@ export default function PitDisplayPage() {
         {rows.length === 0 ? <p className="p-8 text-xl text-slate-300">No passes entered yet.</p> :
           <div className="overflow-x-auto"><table className="w-full min-w-[720px] text-lg sm:text-2xl">
             <thead className="text-left text-xs sm:text-sm uppercase tracking-wider text-slate-400"><tr>
-              <th className="p-4 w-16">#</th><th className="p-4">Driver</th>
-              <th className="p-4 text-right">First</th><th className="p-4 text-right">Second</th>
-              {current.display_mode !== "consistency" && <th className="p-4 text-right">Best</th>}
-              {current.display_mode !== "fastest" && <th className="p-4 text-right">Consistency</th>}
+              <th className="p-4 w-20" aria-sort={activeSort.column === "order" ? (activeSort.direction === "asc" ? "ascending" : "descending") : "none"}>
+                <button type="button" onClick={() => handleSortHeader("order")} className="inline-flex items-center gap-1 font-bold uppercase hover:text-white cursor-pointer select-none">
+                  <span>#</span>{renderSortIcon("order")}
+                </button>
+              </th>
+              <th className="p-4">Driver</th>
+              <th className="p-4 text-right" aria-sort={activeSort.column === "first_half" ? (activeSort.direction === "asc" ? "ascending" : "descending") : "none"}>
+                <button type="button" onClick={() => handleSortHeader("first_half")} className="inline-flex items-center justify-end gap-1 font-bold uppercase hover:text-white cursor-pointer select-none ml-auto">
+                  <span>First</span>{renderSortIcon("first_half")}
+                </button>
+              </th>
+              <th className="p-4 text-right" aria-sort={activeSort.column === "second_half" ? (activeSort.direction === "asc" ? "ascending" : "descending") : "none"}>
+                <button type="button" onClick={() => handleSortHeader("second_half")} className="inline-flex items-center justify-end gap-1 font-bold uppercase hover:text-white cursor-pointer select-none ml-auto">
+                  <span>Second</span>{renderSortIcon("second_half")}
+                </button>
+              </th>
+              {current.display_mode !== "consistency" && <th className="p-4 text-right" aria-sort={activeSort.column === "fastest" ? (activeSort.direction === "asc" ? "ascending" : "descending") : "none"}>
+                <button type="button" onClick={() => handleSortHeader("fastest")} className="inline-flex items-center justify-end gap-1 font-bold uppercase hover:text-white cursor-pointer select-none ml-auto">
+                  <span>Best</span>{renderSortIcon("fastest")}
+                </button>
+              </th>}
+              {current.display_mode !== "fastest" && <th className="p-4 text-right" aria-sort={activeSort.column === "consistency" ? (activeSort.direction === "asc" ? "ascending" : "descending") : "none"}>
+                <button type="button" onClick={() => handleSortHeader("consistency")} className="inline-flex items-center justify-end gap-1 font-bold uppercase hover:text-white cursor-pointer select-none ml-auto">
+                  <span>Consistency</span>{renderSortIcon("consistency")}
+                </button>
+              </th>}
             </tr></thead>
             <tbody>{rows.map((row, index) => <tr key={row.id} className="border-t border-white/10">
-              <td className="p-4 text-amber-400 font-black">{index + 1}</td>
+              <td className="p-4 text-amber-400 font-black">{row.order_num ?? index + 1}</td>
               <td className="p-4 font-black">{row.name || "—"}</td>
               <td className="p-4 text-right font-mono">{formatPass(row.first_half)}</td>
               <td className="p-4 text-right font-mono">{formatPass(row.second_half)}</td>

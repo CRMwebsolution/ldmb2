@@ -2,11 +2,21 @@
 
 import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
-import { ArrowDown, ArrowUp, ChevronDown, ChevronUp, FileDown, FileSpreadsheet, Plus, RefreshCw, Save, Trophy } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, ChevronDown, ChevronUp, FileDown, FileSpreadsheet, Plus, RefreshCw, Save, Trophy } from "lucide-react";
 import { supabase } from "@/lib/supabase/client";
 import type { Race, RaceClass, RaceResult, Racer } from "@/lib/supabase/types";
 import { buildRaceSavePayload, addBlankRows, prepareRaceEditor, type EditableClass, type EditableResult } from "@/lib/race-editor";
-import { computeRaceMetrics, formatPass, hasRecordedPass, isBlankResult, isValidPassInput } from "@/lib/race-results";
+import {
+  computeRaceMetrics,
+  formatPass,
+  hasRecordedPass,
+  isBlankResult,
+  isValidPassInput,
+  sortResultsByColumn,
+  toggleResultSort,
+  type ResultSortColumn,
+  type ResultSortState,
+} from "@/lib/race-results";
 import { todayAtTrack } from "@/lib/race-schedule";
 import { generateRacePdf } from "@/lib/generate-race-pdf";
 import { downloadRaceCsv } from "@/lib/race-csv";
@@ -36,6 +46,8 @@ export default function AdminResultsPage() {
   const [racers, setRacers] = useState<Racer[]>([]);
   const [staleBlankIds, setStaleBlankIds] = useState<string[]>([]);
   const [collapsed, setCollapsed] = useState<string[]>([]);
+  const [classSorts, setClassSorts] = useState<Record<string, ResultSortState>>({});
+  const [editingRow, setEditingRow] = useState<{ classId: string; rowId: string; orderIds: string[] } | null>(null);
   const [loadingRaces, setLoadingRaces] = useState(true);
   const [loadingEditor, setLoadingEditor] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -82,6 +94,7 @@ export default function AdminResultsPage() {
       setClasses(loaded);
       setStaleBlankIds(blanks);
       setCollapsed(loaded.slice(1).map((cls) => cls.id));
+      setEditingRow(null);
       setDirty(false);
     }).catch((error) => {
       console.error("Race editor load failed", error);
@@ -105,6 +118,7 @@ export default function AdminResultsPage() {
     if (dirty && !confirm("Discard unsaved race entries and switch events?")) return;
     setClasses([]);
     setStaleBlankIds([]);
+    setEditingRow(null);
     setLoadingEditor(true);
     setMessage(null);
     setDirty(false);
@@ -115,6 +129,21 @@ export default function AdminResultsPage() {
   classesRef.current = classes;
   const [savingRowId, setSavingRowId] = useState<string | null>(null);
   const [autoSaveStatus, setAutoSaveStatus] = useState<string>("");
+
+  function handleSortHeader(classId: string, column: ResultSortColumn) {
+    setEditingRow(null);
+    setClassSorts((prev) => ({
+      ...prev,
+      [classId]: toggleResultSort(prev[classId], column, "order"),
+    }));
+  }
+
+  function renderSortIcon(activeSort: ResultSortState, column: ResultSortColumn) {
+    if (activeSort.column !== column) return <ArrowUpDown className="w-3.5 h-3.5 opacity-40 shrink-0" />;
+    return activeSort.direction === "asc"
+      ? <ArrowUp className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--primary)" }} />
+      : <ArrowDown className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--primary)" }} />;
+  }
 
   function changeClass(id: string, patch: Partial<Pick<EditableClass, "name" | "display_mode">>) {
     setClasses((previous) => previous.map((cls) => cls.id === id ? { ...cls, ...patch } : cls));
@@ -403,12 +432,23 @@ export default function AdminResultsPage() {
         This race has no classes. <Link href="/admin/races" className="font-bold underline" style={{ color: "var(--primary)" }}>Add active classes in Race Nights</Link>.
       </div> : <div className="space-y-5">
         <p className="text-sm" style={{ color: "var(--muted-fg)" }}>
-          Each class starts with 20 editable rows. Use +5 to make room for more drivers. Passes auto-save to the live site as soon as you click off or press Tab.
+          Each class starts with 20 editable rows. Use +5 to make room for more drivers. Passes auto-save to the live site as soon as you click off or press Tab. Click column headers (#, 1st Pass, 2nd Pass, Best Pass, Consistency) to sort locally.
         </p>
         <fieldset disabled={saving} className="space-y-5">
           {classes.map((cls, classIndex) => {
             const closed = collapsed.includes(cls.id);
             const filled = cls.results.filter((row) => !isBlankResult(row)).length;
+            const activeSort: ResultSortState = classSorts[cls.id] ?? { column: "order", direction: "asc" };
+            const sortedRows = sortResultsByColumn(cls.results, activeSort, cls.display_mode);
+            const displayRows = editingRow?.classId === cls.id
+              ? [
+                  ...editingRow.orderIds
+                    .map((id) => cls.results.find((r) => r.id === id))
+                    .filter((r): r is EditableResult => !!r),
+                  ...cls.results.filter((r) => !editingRow.orderIds.includes(r.id)),
+                ]
+              : sortedRows;
+
             return <section key={cls.id} className="rounded-2xl border overflow-hidden" style={{ background: "var(--surface)", borderColor: "var(--border)" }}>
               <div className="flex flex-wrap items-center justify-between gap-3 p-4" style={{ background: "var(--muted)" }}>
                 <button type="button" onClick={() => setCollapsed((previous) => closed ? previous.filter((id) => id !== cls.id) : [...previous, cls.id])}
@@ -446,28 +486,76 @@ export default function AdminResultsPage() {
                 <div className="overflow-x-auto">
                   <table className="w-full min-w-[760px] text-sm">
                     <thead><tr className="text-left" style={{ color: "var(--muted-fg)" }}>
-                      <th className="p-2 w-10">#</th><th className="p-2">Racer / Driver</th>
-                      <th className="p-2">1st Pass</th><th className="p-2">2nd Pass</th>
-                      <th className="p-2">Linked Identity</th><th className="p-2">Best Pass</th><th className="p-2">Consistency</th>
+                      <th className="p-2 w-14" aria-sort={activeSort.column === "order" ? (activeSort.direction === "asc" ? "ascending" : "descending") : "none"}>
+                        <button type="button" onClick={() => handleSortHeader(cls.id, "order")}
+                          className="inline-flex items-center gap-1 font-bold hover:opacity-80 cursor-pointer select-none"
+                          title="Sort by order number">
+                          <span>#</span>{renderSortIcon(activeSort, "order")}
+                        </button>
+                      </th>
+                      <th className="p-2">Racer / Driver</th>
+                      <th className="p-2" aria-sort={activeSort.column === "first_half" ? (activeSort.direction === "asc" ? "ascending" : "descending") : "none"}>
+                        <button type="button" onClick={() => handleSortHeader(cls.id, "first_half")}
+                          className="inline-flex items-center gap-1 font-bold hover:opacity-80 cursor-pointer select-none"
+                          title="Sort by 1st Pass">
+                          <span>1st Pass</span>{renderSortIcon(activeSort, "first_half")}
+                        </button>
+                      </th>
+                      <th className="p-2" aria-sort={activeSort.column === "second_half" ? (activeSort.direction === "asc" ? "ascending" : "descending") : "none"}>
+                        <button type="button" onClick={() => handleSortHeader(cls.id, "second_half")}
+                          className="inline-flex items-center gap-1 font-bold hover:opacity-80 cursor-pointer select-none"
+                          title="Sort by 2nd Pass">
+                          <span>2nd Pass</span>{renderSortIcon(activeSort, "second_half")}
+                        </button>
+                      </th>
+                      <th className="p-2">Linked Identity</th>
+                      <th className="p-2" aria-sort={activeSort.column === "fastest" ? (activeSort.direction === "asc" ? "ascending" : "descending") : "none"}>
+                        <button type="button" onClick={() => handleSortHeader(cls.id, "fastest")}
+                          className="inline-flex items-center gap-1 font-bold hover:opacity-80 cursor-pointer select-none"
+                          title="Sort by Best Pass">
+                          <span>Best Pass</span>{renderSortIcon(activeSort, "fastest")}
+                        </button>
+                      </th>
+                      <th className="p-2" aria-sort={activeSort.column === "consistency" ? (activeSort.direction === "asc" ? "ascending" : "descending") : "none"}>
+                        <button type="button" onClick={() => handleSortHeader(cls.id, "consistency")}
+                          className="inline-flex items-center gap-1 font-bold hover:opacity-80 cursor-pointer select-none"
+                          title="Sort by Consistency">
+                          <span>Consistency</span>{renderSortIcon(activeSort, "consistency")}
+                        </button>
+                      </th>
                     </tr></thead>
-                    <tbody>{cls.results.map((row, rowIndex) => <tr key={row.id} className="border-t" style={{ borderColor: "var(--border)" }}>
-                      <td className="p-2" style={{ color: "var(--muted-fg)" }}>{rowIndex + 1}</td>
+                    <tbody>{displayRows.map((row, rowIndex) => <tr key={row.id} data-row-id={row.id} className="border-t" style={{ borderColor: "var(--border)" }}>
+                      <td className="p-2 font-mono text-xs" style={{ color: "var(--muted-fg)" }}>{row.order_num ?? rowIndex + 1}</td>
                       {(["name", "first_half", "second_half"] as const).map((field) => <td key={field} className="p-1">
                         <input value={row[field] || ""}
+                          onFocus={() => setEditingRow((prev) => prev?.rowId === row.id ? prev : { classId: cls.id, rowId: row.id, orderIds: displayRows.map((r) => r.id) })}
                           onChange={(event) => changeRow(cls.id, row.id, field, event.target.value)}
-                          onBlur={() => void handleBlurRow(cls.id, row.id)}
-                          aria-label={`${cls.name} row ${rowIndex + 1} ${field === "name" ? "racer" : field === "first_half" ? "first pass" : "second pass"}`}
+                          onBlur={(event) => {
+                            const nextFocused = event.relatedTarget as HTMLElement | null;
+                            if (nextFocused?.closest("tr")?.dataset.rowId !== row.id) {
+                              setEditingRow(null);
+                            }
+                            void handleBlurRow(cls.id, row.id);
+                          }}
+                          aria-label={`${cls.name} row ${row.order_num ?? rowIndex + 1} ${field === "name" ? "racer" : field === "first_half" ? "first pass" : "second pass"}`}
                           placeholder={field === "name" ? "Name" : "Time, ft, or DQ"}
                           className="w-full rounded border px-2 py-2 font-mono" style={{ background: "var(--surface)", borderColor: "var(--border)" }} />
                       </td>)}
                       <td className="p-1">
                         <select value={row.racer_id || ""}
+                          onFocus={() => setEditingRow((prev) => prev?.rowId === row.id ? prev : { classId: cls.id, rowId: row.id, orderIds: displayRows.map((r) => r.id) })}
                           onChange={(event) => {
                             const val = event.target.value;
                             changeRow(cls.id, row.id, "racer_id", val);
                             void handleBlurRow(cls.id, row.id, val);
                           }}
-                          aria-label={`Linked identity for ${row.name || `row ${rowIndex + 1}`}`}
+                          onBlur={(event) => {
+                            const nextFocused = event.relatedTarget as HTMLElement | null;
+                            if (nextFocused?.closest("tr")?.dataset.rowId !== row.id) {
+                              setEditingRow(null);
+                            }
+                          }}
+                          aria-label={`Linked identity for ${row.name || `row ${row.order_num ?? rowIndex + 1}`}`}
                           className="w-full rounded border px-2 py-2 text-xs" style={{ background: "var(--surface)", borderColor: "var(--border)" }}>
                           <option value="">Unlinked</option>
                           {racers.map((racer) => <option key={racer.id} value={racer.id}>{racer.display_name}</option>)}

@@ -354,3 +354,24 @@
 - Verified all 19 unit tests pass (`npm test`).
 - Verified clean production build (`npm run build`) with zero TypeScript errors across all 27 routes.
 - Branch: `fix/results-auto-save-on-blur`.
+
+## 2026-10-17 12:28 PM EDT — Antigravity (Gemini 4 Argon)
+
+### What it did
+
+- Added local clickable column-header sorting for **Order Number (`#`)**, **1st Pass**, **2nd Pass**, **Best Pass**, and **Consistency** across both spectator and admin views:
+  - `src/lib/race-results.ts`: Added `sortResultsByColumn` and `toggleResultSort` helpers that sort by `order_num`, `first_half`, `second_half`, `fastest`, or `consistency` (with ascending/descending toggle on repeated clicks), while always keeping recorded passes ahead of DQs/empty values and keeping blank editor placeholder rows at the bottom.
+  - `src/app/race-results/[raceId]/page.tsx`: Added the `#` (Order Number) column and clickable sort headers with directional indicators (`ArrowUp`, `ArrowDown`, `ArrowUpDown`) for `#`, `1st Pass`, `2nd Pass`, `Best Pass`, and `Consistency`.
+  - `src/app/race-results/[raceId]/pit/page.tsx`: Added clickable sort headers for `#`, `First`, `Second`, `Best`, and `Consistency`.
+  - `src/app/admin/results/page.tsx`: Added clickable sort headers for `#`, `1st Pass`, `2nd Pass`, `Best Pass`, and `Consistency` per class, while locking the active row order while typing in a row (`onFocus` -> `onBlur`) so rows never jump mid-entry.
+- Added unit tests in `tests/race-results.test.mjs` covering `sortResultsByColumn` and `toggleResultSort`.
+
+### Database changes
+
+- None.
+
+### Other relevant changes
+
+- Verified all 20 unit tests pass (`npm test`).
+- Verified clean production build (`npm run build`) with zero TypeScript errors across all 27 routes.
+- Pushed to branch `fix/results-auto-save-on-blur` for manual review (`main` remains untouched).

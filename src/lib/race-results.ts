@@ -109,6 +109,99 @@ export function sortClassResults(rows: RaceResult[], mode: string): RaceResult[]
   });
 }
 
+export type ResultSortColumn = "order" | "first_half" | "second_half" | "fastest" | "consistency";
+export type SortDirection = "asc" | "desc";
+export type ResultSortState = {
+  column: ResultSortColumn;
+  direction: SortDirection;
+};
+
+export function toggleResultSort(
+  current: ResultSortState | undefined,
+  column: ResultSortColumn,
+  defaultColumn: ResultSortColumn = "order",
+): ResultSortState {
+  const activeColumn = current?.column ?? defaultColumn;
+  const activeDirection = current?.direction ?? "asc";
+  if (activeColumn === column) {
+    return { column, direction: activeDirection === "asc" ? "desc" : "asc" };
+  }
+  return { column, direction: "asc" };
+}
+
+function passCategoryRank(raw: string | null | undefined): number {
+  const value = raw == null ? "" : String(raw).trim();
+  if (!value || NO_PASS_MARKER.test(value)) return 3;
+  const parsed = parsePass(value);
+  if (parsed.kind === "time" || parsed.kind === "distance") return 0;
+  if (RECORDED_DQ.test(value) || DQ.test(value)) return 1;
+  return 2;
+}
+
+function comparePassWithDirection(
+  a: string | null | undefined,
+  b: string | null | undefined,
+  direction: SortDirection,
+): number {
+  const catA = passCategoryRank(a);
+  const catB = passCategoryRank(b);
+  if (catA !== catB) return catA - catB;
+  if (catA !== 0) return 0;
+  const cmp = compareBestPass(a ?? null, b ?? null);
+  return direction === "asc" ? cmp : -cmp;
+}
+
+export function sortResultsByColumn<
+  T extends Pick<RaceResult, "id" | "order_num" | "name" | "first_half" | "second_half" | "fastest" | "consistency">,
+>(rows: T[], sort: ResultSortState, mode: string = "fastest"): T[] {
+  return [...rows].sort((a, b) => {
+    const blankA = isBlankResult(a);
+    const blankB = isBlankResult(b);
+    if (blankA !== blankB) return blankA ? 1 : -1;
+    if (blankA && blankB) return (a.order_num ?? Infinity) - (b.order_num ?? Infinity);
+
+    const orderFallback = (a.order_num ?? Infinity) - (b.order_num ?? Infinity);
+
+    if (sort.column === "order") {
+      return sort.direction === "asc" ? orderFallback : -orderFallback;
+    }
+
+    if (sort.column === "first_half") {
+      return comparePassWithDirection(a.first_half, b.first_half, sort.direction) || orderFallback;
+    }
+
+    if (sort.column === "second_half") {
+      return comparePassWithDirection(a.second_half, b.second_half, sort.direction) || orderFallback;
+    }
+
+    if (sort.column === "fastest") {
+      const fastA = a.fastest ?? computeRaceMetrics(a.first_half ?? null, a.second_half ?? null).fastest;
+      const fastB = b.fastest ?? computeRaceMetrics(b.first_half ?? null, b.second_half ?? null).fastest;
+      const passDiff = comparePassWithDirection(fastA, fastB, sort.direction);
+      if (passDiff) return passDiff;
+      if (mode === "both") {
+        const consDiff = (a.consistency ?? Infinity) - (b.consistency ?? Infinity);
+        if (consDiff) return consDiff;
+      }
+      return orderFallback;
+    }
+
+    // sort.column === "consistency"
+    const consA = a.consistency ?? computeRaceMetrics(a.first_half ?? null, a.second_half ?? null).consistency;
+    const consB = b.consistency ?? computeRaceMetrics(b.first_half ?? null, b.second_half ?? null).consistency;
+    const hasA = consA != null && Number.isFinite(consA);
+    const hasB = consB != null && Number.isFinite(consB);
+    if (hasA !== hasB) return hasA ? -1 : 1;
+    if (hasA && hasB) {
+      const diff = sort.direction === "asc" ? consA - consB : consB - consA;
+      if (diff) return diff;
+    }
+    const fastA = a.fastest ?? computeRaceMetrics(a.first_half ?? null, a.second_half ?? null).fastest;
+    const fastB = b.fastest ?? computeRaceMetrics(b.first_half ?? null, b.second_half ?? null).fastest;
+    return compareBestPass(fastA, fastB) || orderFallback;
+  });
+}
+
 export function formatRaceDate(date: string, options: Intl.DateTimeFormatOptions = {
   year: "numeric", month: "long", day: "numeric",
 }): string {
