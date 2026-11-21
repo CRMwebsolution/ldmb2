@@ -1,118 +1,26 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowDown, ArrowLeft, ArrowUp, ArrowUpDown, ChevronDown, ChevronUp, MonitorUp } from "lucide-react";
-import { supabase } from "@/lib/supabase/client";
-import type { Race, RaceClass, RaceResult } from "@/lib/supabase/types";
 import {
   formatPass,
   formatRaceDate,
-  isBlankResult,
-  sortClassResults,
   sortResultsByColumn,
   toggleResultSort,
   type ResultSortColumn,
   type ResultSortState,
 } from "@/lib/race-results";
-import { todayAtTrack } from "@/lib/race-schedule";
+import { usePublicRaceResults } from "@/lib/use-public-race-results";
 import { generateRacePdf } from "@/lib/generate-race-pdf";
 import { SpectatorQR } from "@/components/SpectatorQR";
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-type ClassWithResults = RaceClass & { results: RaceResult[] };
-
 export default function RaceResultsDetail() {
   const { raceId } = useParams<{ raceId: string }>();
-  const [race, setRace] = useState<Race | null>(null);
-  const [classes, setClasses] = useState<ClassWithResults[]>([]);
+  const { race, classes, loading, error } = usePublicRaceResults(raceId);
   const [collapsed, setCollapsed] = useState<string[]>([]);
   const [classSorts, setClassSorts] = useState<Record<string, ResultSortState>>({});
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [realtimeRevision, setRealtimeRevision] = useState(0);
-
-  useEffect(() => {
-    let active = true;
-    let inFlight = false;
-    let activeRaceDate = "";
-    let ticks = 0;
-    async function load(initial = false) {
-      if (inFlight) return;
-      inFlight = true;
-      if (initial) {
-        setLoading(true);
-        setError("");
-        setRace(null);
-        setClasses([]);
-      }
-      try {
-        const selector = UUID.test(raceId) ? "id" : "slug";
-        const { data: event, error: raceError } = await supabase.from("races")
-          .select("*").eq(selector, raceId).eq("published", true).maybeSingle();
-        if (raceError) throw raceError;
-        if (!event) {
-          activeRaceDate = "";
-          if (active) { setRace(null); setClasses([]); }
-          return;
-        }
-        activeRaceDate = event.date;
-
-        const { data: raceClasses, error: classError } = await supabase.from("classes")
-          .select("*").eq("race_id", event.id).order("order_num", { ascending: true });
-        if (classError) throw classError;
-        const ids = (raceClasses || []).map((item) => item.id);
-        const rows: RaceResult[] = [];
-        if (ids.length) {
-          // PostgREST pages at 1,000 rows. Read every page so large race nights stay complete.
-          for (let start = 0; ; start += 1000) {
-            const { data, error: resultsError } = await supabase.from("results").select("*")
-              .in("class_id", ids).order("id").range(start, start + 999);
-            if (resultsError) throw resultsError;
-            rows.push(...(data || []));
-            if (!data || data.length < 1000) break;
-          }
-        }
-        if (!active) return;
-        setError("");
-        setRace(event);
-        setClasses((raceClasses || []).map((item) => {
-          const populated = rows
-            .filter((row) => row.class_id === item.id && !isBlankResult(row))
-            .sort((a, b) => (a.order_num ?? Infinity) - (b.order_num ?? Infinity))
-            .map((row, index) => ({ ...row, order_num: row.order_num ?? index + 1 }));
-          return {
-            ...item,
-            results: sortClassResults(populated, item.display_mode),
-          };
-        }));
-      } catch (err) {
-        console.error("Could not load race results", err);
-        if (active && initial) setError("Results could not be loaded. Please try again later.");
-      } finally {
-        inFlight = false;
-        if (active && initial) setLoading(false);
-      }
-    }
-    void load(true);
-    const interval = window.setInterval(() => {
-      ticks += 1;
-      if (document.visibilityState === "visible" && (activeRaceDate === todayAtTrack() || ticks % 6 === 0)) void load();
-    }, 5000);
-    return () => { active = false; window.clearInterval(interval); };
-  }, [raceId, realtimeRevision]);
-
-  useEffect(() => {
-    if (!race?.id) return;
-    const refresh = () => setRealtimeRevision((value) => value + 1);
-    const channel = supabase.channel(`public-race-${race.id}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "races", filter: `id=eq.${race.id}` }, refresh)
-      .on("postgres_changes", { event: "*", schema: "public", table: "classes", filter: `race_id=eq.${race.id}` }, refresh)
-      .on("postgres_changes", { event: "*", schema: "public", table: "results" }, refresh)
-      .subscribe();
-    return () => { void supabase.removeChannel(channel); };
-  }, [race?.id]);
 
   function handleSortHeader(classId: string, column: ResultSortColumn, defaultColumn: ResultSortColumn) {
     setClassSorts((prev) => ({
@@ -132,18 +40,18 @@ export default function RaceResultsDetail() {
     <Link href="/race-results" className="inline-flex gap-2 items-center text-sm font-bold mb-7" style={{ color: "var(--primary)" }}>
       <ArrowLeft className="w-4 h-4" /> All race results
     </Link>
-    {loading ? <p>Loading race results...</p> : error ? <p role="alert">{error}</p> : !race ? <p>This race has no published results.</p> : <>
+    {loading ? <p>Loading race results...</p> : error ? <p role="alert">{error}</p> : !race ? <p>Results will appear here when the first entry is saved.</p> : <>
       <header className="mb-9">
-        <span className="text-xs font-bold uppercase tracking-widest" style={{ color: "var(--primary)" }}>Official race results</span>
+        <span className="text-xs font-bold uppercase tracking-widest" style={{ color: "var(--primary)" }}>{race.published ? "Official race results" : "Live race results"}</span>
         <h1 className="text-4xl sm:text-5xl font-black mt-2">{race.name}</h1>
         <p className="mt-2" style={{ color: "var(--muted-fg)" }}>{formatRaceDate(race.date)}</p>
-        <p className="mt-1 text-xs" style={{ color: "var(--muted-fg)" }}>Published passes refresh automatically while this page is open, every few seconds on race day. Click any column header to sort.</p>
+        <p className="mt-1 text-xs" style={{ color: "var(--muted-fg)" }}>Entries update automatically. Click any column header to sort.</p>
         <div className="mt-4 flex flex-wrap gap-2">
           {classes.length > 0 && <>
-            <button type="button" onClick={() => generateRacePdf(race, classes)}
+            {race.published && <button type="button" onClick={() => generateRacePdf(race, classes)}
               className="rounded-lg px-4 py-2 font-bold text-sm" style={{ background: "var(--primary)", color: "var(--primary-fg)" }}>
               Download Official PDF
-            </button>
+            </button>}
             <Link href={`/race-results/${race.slug || race.id}/pit`} className="rounded-lg border px-4 py-2 font-bold text-sm inline-flex items-center gap-2" style={{ borderColor: "var(--border)" }}>
               <MonitorUp className="w-4 h-4" /> Pit Display
             </Link>

@@ -31,7 +31,7 @@ export function prepareRaceEditor(raceClasses: RaceClass[], rows: RaceResult[]):
     const results = populated.filter((row) => {
       if (isBlankResult(row)) { staleBlankIds.push(row.id); return false; }
       return true;
-    }).map((row, index) => ({ ...row, order_num: index + 1, persisted: true }));
+    }).map((row, index) => ({ ...row, order_num: row.order_num ?? index + 1, persisted: true }));
     return addBlankRows({ ...cls, results }, Math.max(0, 20 - results.length));
   });
   return { classes, staleBlankIds };

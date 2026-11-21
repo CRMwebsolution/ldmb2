@@ -78,12 +78,18 @@ export default function ContestantRegistrationPage() {
     }
 
     setLoadingRoster(true);
-    const classResponse = await supabase.from("classes").select("*")
-      .eq("race_id", raceId).order("order_num", { ascending: true });
+    const [classResponse, raceResponse] = await Promise.all([
+      supabase.from("classes").select("*").eq("race_id", raceId).order("order_num", { ascending: true }),
+      supabase.from("races").select("*").eq("id", raceId).single(),
+    ]);
     if (classResponse.error) {
       setMessage({ error: true, text: classResponse.error.message });
       setLoadingRoster(false);
       return;
+    }
+    if (raceResponse.data) {
+      const race = raceResponse.data;
+      setRaces((previous) => previous.map((item) => item.id === race.id ? race : item));
     }
 
     const raceClasses = classResponse.data || [];
@@ -245,7 +251,7 @@ export default function ContestantRegistrationPage() {
         >
           {!races.length && <option value="">No races available</option>}
           {races.map((race) => <option key={race.id} value={race.id}>
-            {race.date} · {race.name} · {race.published ? "published" : "draft"}
+            {race.date} · {race.name} · {race.published ? "official" : race.live_results ? "live" : "awaiting entries"}
           </option>)}
         </select>
       </label>

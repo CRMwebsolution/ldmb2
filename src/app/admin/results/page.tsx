@@ -21,6 +21,8 @@ import { todayAtTrack } from "@/lib/race-schedule";
 import { generateRacePdf } from "@/lib/generate-race-pdf";
 import { downloadRaceCsv } from "@/lib/race-csv";
 
+type ResultField = "name" | "first_half" | "second_half" | "racer_id";
+
 async function fetchRaceEditor(raceId: string) {
   const { data: raceClasses, error: classError } = await supabase.from("classes")
     .select("*").eq("race_id", raceId).order("order_num", { ascending: true });
@@ -53,6 +55,13 @@ export default function AdminResultsPage() {
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [reload, setReload] = useState(0);
+  const [pendingSaves, setPendingSaves] = useState(0);
+  const [dirtyFieldCount, setDirtyFieldCount] = useState(0);
+  const [autoSaveStatus, setAutoSaveStatus] = useState("");
+  const draftFields = useRef(new Map<string, string>());
+  const savedRows = useRef(new Map<string, EditableResult>());
+  const saveQueue = useRef(Promise.resolve());
+  const hasUnsavedChanges = dirty || dirtyFieldCount > 0;
   const [message, setMessage] = useState<{ error: boolean; text: string } | null>(null);
 
   useEffect(() => {
@@ -68,7 +77,11 @@ export default function AdminResultsPage() {
           const events = data || [];
           setRaces(events);
           const today = todayAtTrack();
-          setSelectedRaceId(events.find((race) => race.date <= today)?.id || events.at(-1)?.id || "");
+          const initialRace = events.find((race) => race.date === today)
+            ?? events.findLast((race) => race.date > today && race.live_results && race.event_status === "scheduled")
+            ?? events.find((race) => race.date < today)
+            ?? events.at(-1);
+          setSelectedRaceId(initialRace?.id || "");
           if (!events.length) setLoadingEditor(false);
         }
         setLoadingRaces(false);
@@ -89,14 +102,24 @@ export default function AdminResultsPage() {
   useEffect(() => {
     if (!selectedRaceId) return;
     let active = true;
-    fetchRaceEditor(selectedRaceId).then(({ classes: loaded, staleBlankIds: blanks }) => {
+    async function loadEditor() {
+      // Read the revision before the rows so a concurrent save cannot hide a stale editor.
+      const { data: race, error } = await supabase.from("races").select("*").eq("id", selectedRaceId).single();
+      if (error) throw error;
+      const { classes: loaded, staleBlankIds: blanks } = await fetchRaceEditor(selectedRaceId);
       if (!active) return;
+      savedRows.current = new Map(loaded.flatMap((cls) => cls.results.map((row) => [row.id, row])));
+      draftFields.current.clear();
+      setDirtyFieldCount(0);
+      setAutoSaveStatus("");
+      setRaces((previous) => previous.map((item) => item.id === race.id ? race : item));
       setClasses(loaded);
       setStaleBlankIds(blanks);
       setCollapsed(loaded.slice(1).map((cls) => cls.id));
       setEditingRow(null);
       setDirty(false);
-    }).catch((error) => {
+    }
+    void loadEditor().catch((error) => {
       console.error("Race editor load failed", error);
       if (active) setMessage({ error: true, text: "Race entries could not be loaded. Try Refresh." });
     }).finally(() => { if (active) setLoadingEditor(false); });
@@ -104,18 +127,18 @@ export default function AdminResultsPage() {
   }, [selectedRaceId, reload]);
 
   useEffect(() => {
-    if (!dirty) return;
+    if (!hasUnsavedChanges) return;
     const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); };
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
-  }, [dirty]);
+  }, [hasUnsavedChanges]);
 
   const selectedRace = races.find((race) => race.id === selectedRaceId);
-  const hasPendingChanges = dirty || staleBlankIds.length > 0;
+  const hasPendingChanges = hasUnsavedChanges || staleBlankIds.length > 0;
 
   function selectRace(id: string) {
-    if (id === selectedRaceId || saving) return;
-    if (dirty && !confirm("Discard unsaved race entries and switch events?")) return;
+    if (id === selectedRaceId || saving || pendingSaves) return;
+    if (hasUnsavedChanges && !confirm("Discard unsaved race entries and switch events?")) return;
     setClasses([]);
     setStaleBlankIds([]);
     setEditingRow(null);
@@ -124,11 +147,6 @@ export default function AdminResultsPage() {
     setDirty(false);
     setSelectedRaceId(id);
   }
-
-  const classesRef = useRef<EditableClass[]>(classes);
-  classesRef.current = classes;
-  const [savingRowId, setSavingRowId] = useState<string | null>(null);
-  const [autoSaveStatus, setAutoSaveStatus] = useState<string>("");
 
   function handleSortHeader(classId: string, column: ResultSortColumn) {
     setEditingRow(null);
@@ -150,95 +168,70 @@ export default function AdminResultsPage() {
     setDirty(true);
   }
 
-  function changeRow(classId: string, rowId: string, field: "name" | "first_half" | "second_half" | "racer_id", value: string) {
+  function changeRow(classId: string, rowId: string, field: ResultField, value: string) {
+    draftFields.current.set(`${rowId}/${field}`, value);
+    setDirtyFieldCount(draftFields.current.size);
     setClasses((previous) => previous.map((cls) => cls.id !== classId ? cls : {
       ...cls,
       results: cls.results.map((row) => {
         if (row.id !== rowId) return row;
-        const next = { ...row, [field]: field === "racer_id" ? value || null : value } as EditableResult;
+        const next = { ...row, [field]: value || null };
         if (field === "first_half" || field === "second_half") Object.assign(next, computeRaceMetrics(next.first_half, next.second_half));
         return next;
       }),
     }));
-    setDirty(true);
     setMessage(null);
   }
 
-  async function handleBlurRow(classId: string, rowId: string, explicitRacerId?: string) {
-    const cls = classesRef.current.find((c) => c.id === classId);
-    if (!cls) return;
-    const row = cls.results.find((r) => r.id === rowId);
-    if (!row) return;
-
-    const racerIdValue = explicitRacerId !== undefined ? (explicitRacerId || null) : (row.racer_id || null);
-
-    // If completely blank:
-    if (isBlankResult(row)) {
-      if (row.persisted) {
-        setSavingRowId(row.id);
-        try {
-          const { error } = await supabase.from("results").delete().eq("id", row.id);
+  function saveField(classId: string, row: EditableResult, field: ResultField, rawValue: string) {
+    const key = `${row.id}/${field}`;
+    if (draftFields.current.get(key) !== rawValue) return;
+    const value = rawValue.trim() || null;
+    if ((field === "first_half" || field === "second_half") && !isValidPassInput(value)) {
+      setMessage({ error: true, text: "Enter a time in seconds, a distance in feet, or DQ." });
+      return;
+    }
+    const raceId = selectedRaceId;
+    setPendingSaves((count) => count + 1);
+    saveQueue.current = saveQueue.current.then(async () => {
+      try {
+        const saved = savedRows.current.get(row.id);
+        if ((saved?.[field]?.trim() || null) !== value) {
+          const next = {
+            id: row.id, class_id: classId, order_num: saved?.order_num ?? row.order_num ?? 1,
+            name: saved?.name ?? null, first_half: saved?.first_half ?? null,
+            second_half: saved?.second_half ?? null, racer_id: saved?.racer_id ?? null,
+            [field]: value,
+          };
+          const { data, error } = await supabase.rpc("save_race_result", {
+            p_race_id: raceId,
+            p_result: { ...next, ...computeRaceMetrics(next.first_half, next.second_half) },
+            p_expected_updated_at: saved?.updated_at ?? null,
+          }).single();
           if (error) throw error;
-          setClasses((prev) => prev.map((c) => c.id !== classId ? c : {
-            ...c,
-            results: c.results.map((r) => r.id === row.id ? { ...r, persisted: false } : r),
+
+          const { updated_at, order_num, ...raceUpdate } = data;
+          const rowUpdate = { updated_at, order_num: order_num ?? next.order_num, persisted: updated_at !== null };
+          savedRows.current.set(row.id, { ...row, ...next, ...rowUpdate });
+          setRaces((previous) => previous.map((race) => race.id === raceId ? { ...race, ...raceUpdate } : race));
+          setClasses((previous) => previous.map((cls) => cls.id !== classId ? cls : {
+            ...cls,
+            results: cls.results.map((entry) => entry.id === row.id ? { ...entry, ...rowUpdate } : entry),
           }));
-          setAutoSaveStatus("Removed empty pass");
-        } catch (err: any) {
-          console.error("Auto-delete blank failed", err);
-        } finally {
-          setSavingRowId(null);
+          setAutoSaveStatus("Saved to live results");
         }
+        if (draftFields.current.get(key) === rawValue) {
+          draftFields.current.delete(key);
+          setDirtyFieldCount(draftFields.current.size);
+        }
+      } catch (error) {
+        console.error("Auto-save result failed", error);
+        const detail = error instanceof Object && "message" in error ? String(error.message) : "Could not save this entry.";
+        setMessage({ error: true, text: `Auto-save failed. ${detail}` });
+      } finally {
+        setPendingSaves((count) => count - 1);
       }
-      return;
-    }
-
-    // Check pass format validation
-    if (![row.first_half, row.second_half].every(isValidPassInput)) {
-      setMessage({ error: true, text: `Check pass format for "${row.name || "entry"}" (use seconds, feet, or DQ).` });
-      return;
-    }
-
-    const first = row.first_half?.trim() || null;
-    const second = row.second_half?.trim() || null;
-    const metrics = computeRaceMetrics(first, second);
-
-    setSavingRowId(row.id);
-    setAutoSaveStatus(`Saving pass for ${row.name || "entry"}...`);
-
-    try {
-      const payload = {
-        id: row.id,
-        class_id: classId,
-        order_num: row.order_num || 1,
-        name: row.name?.trim() || null,
-        first_half: first,
-        second_half: second,
-        fastest: metrics.fastest,
-        consistency: metrics.consistency,
-        racer_id: racerIdValue,
-        updated_at: new Date().toISOString(),
-      };
-
-      const { error } = await supabase.from("results").upsert(payload, { onConflict: "id" });
-      if (error) throw error;
-
-      // Mark row as persisted in state
-      setClasses((prev) => prev.map((c) => c.id !== classId ? c : {
-        ...c,
-        results: c.results.map((r) => r.id === row.id ? { ...r, ...payload, persisted: true } : r),
-      }));
-
-      setAutoSaveStatus(`Saved pass for ${row.name || "entry"}`);
-      setMessage(null);
-      setDirty(false);
-    } catch (err: any) {
-      console.error("Auto-save pass failed", err);
-      setMessage({ error: true, text: `Auto-save failed: ${err.message || "Could not save pass"}` });
-      setAutoSaveStatus("Error auto-saving");
-    } finally {
-      setSavingRowId(null);
-    }
+    });
   }
 
   async function handleBlurClassName(classId: string, name: string) {
@@ -277,7 +270,7 @@ export default function AdminResultsPage() {
   }
 
   async function saveAll() {
-    if (!selectedRace || !hasPendingChanges || saving) return;
+    if (!selectedRace || !hasPendingChanges || saving || pendingSaves) return;
     let payload: ReturnType<typeof buildRaceSavePayload>;
     try {
       payload = buildRaceSavePayload(classes, staleBlankIds);
@@ -304,7 +297,7 @@ export default function AdminResultsPage() {
           published_revision: revision.published_revision,
         } : race));
       }
-      setMessage({ error: false, text: `Atomically saved ${payload.resultPayload.length} entries${selectedRace.published ? "; a new immutable published revision was recorded." : " as a draft."}` });
+      setMessage({ error: false, text: `Saved ${payload.resultPayload.length} entries.` });
       setLoadingEditor(true);
       setReload((value) => value + 1);
     } catch (error) {
@@ -316,17 +309,17 @@ export default function AdminResultsPage() {
   }
 
   async function togglePublished() {
-    if (!selectedRace || saving) return;
-    if (dirty) {
-      setMessage({ error: true, text: "Save the race entries before changing publication." });
+    if (!selectedRace || saving || pendingSaves) return;
+    if (hasUnsavedChanges) {
+      setMessage({ error: true, text: "Save your changes before changing the official results." });
       return;
     }
     const published = !selectedRace.published;
     if (published && !classes.some((cls) => cls.results.some(hasRecordedPass))) {
-      setMessage({ error: true, text: "Record at least one named pass before publishing." });
+      setMessage({ error: true, text: "Record at least one named pass before marking the results official." });
       return;
     }
-    if (published && !confirm(`Publish ${selectedRace.name}? Its saved entries will be visible on the public results page.`)) return;
+    if (published && !confirm(`Mark ${selectedRace.name} results official?`)) return;
     try {
       const { data, error } = await supabase.rpc("set_race_publication", {
         p_race_id: selectedRace.id,
@@ -341,7 +334,9 @@ export default function AdminResultsPage() {
         working_revision: revision?.working_revision ?? race.working_revision,
         published_revision: revision?.published_revision ?? race.published_revision,
       } : race));
-      setMessage({ error: false, text: published ? "Results are published and an immutable official revision was recorded." : "Results are hidden from the public page; prior official revisions remain in the audit history." });
+      setMessage({ error: false, text: published
+        ? "Results marked official."
+        : selectedRace.live_results ? "Official status removed. Spectators can still see live results." : "Results hidden." });
     } catch (error) {
       console.error("Publication failed", error);
       setMessage({ error: true, text: "Publication could not be updated." });
@@ -360,7 +355,7 @@ export default function AdminResultsPage() {
   });
 
   function refresh() {
-    if (dirty && !confirm("Discard unsaved entries and reload this race?")) return;
+    if (pendingSaves || (hasUnsavedChanges && !confirm("Discard unsaved entries and reload this race?"))) return;
     setLoadingEditor(true);
     setMessage(null);
     setReload((value) => value + 1);
@@ -375,7 +370,7 @@ export default function AdminResultsPage() {
         </p>
       </div>
       <div className="flex flex-wrap gap-2">
-        <button type="button" onClick={refresh} disabled={!selectedRaceId || loadingEditor || saving}
+        <button type="button" onClick={refresh} disabled={!selectedRaceId || loadingEditor || saving || pendingSaves > 0}
           className="rounded-lg border px-3 py-2 text-sm font-bold disabled:opacity-50 inline-flex items-center gap-2" style={{ borderColor: "var(--border)" }}>
           <RefreshCw className="w-4 h-4" /> Refresh
         </button>
@@ -391,7 +386,7 @@ export default function AdminResultsPage() {
           className="rounded-lg border px-3 py-2 text-sm font-bold disabled:opacity-50 inline-flex items-center gap-2" style={{ borderColor: "var(--border)" }}>
           <FileSpreadsheet className="w-4 h-4" /> Export CSV
         </button>
-        <button type="button" onClick={saveAll} disabled={!hasPendingChanges || !selectedRace || loadingEditor || saving}
+        <button type="button" onClick={saveAll} disabled={!hasPendingChanges || !selectedRace || loadingEditor || saving || pendingSaves > 0}
           className="rounded-lg px-4 py-2 text-sm font-bold disabled:opacity-50 inline-flex items-center gap-2"
           style={{ background: "var(--primary)", color: "var(--primary-fg)" }}>
           <Save className="w-4 h-4" /> {saving ? "Saving..." : "Save All"}
@@ -401,29 +396,22 @@ export default function AdminResultsPage() {
 
     <div className="rounded-2xl border p-4 flex flex-wrap items-end justify-between gap-4" style={{ background: "var(--surface)", borderColor: "var(--border)" }}>
       <label className="font-bold text-sm flex-1 min-w-[230px]">Race night
-        <select value={selectedRaceId} onChange={(event) => selectRace(event.target.value)} disabled={loadingRaces || saving}
+        <select value={selectedRaceId} onChange={(event) => selectRace(event.target.value)} disabled={loadingRaces || saving || pendingSaves > 0}
           className="block mt-1 w-full rounded-lg border px-3 py-2" style={{ background: "var(--muted)", borderColor: "var(--border)" }}>
           {!selectedRaceId && <option value="">Select a race</option>}
-          {races.map((race) => <option key={race.id} value={race.id}>{race.date} · {race.name} {race.published ? `(Published r${race.published_revision})` : `(Draft r${race.working_revision})`}</option>)}
+          {races.map((race) => <option key={race.id} value={race.id}>{race.date} · {race.name} {race.published ? "(Official)" : race.live_results ? "(Live)" : ""}</option>)}
         </select>
       </label>
-      <button type="button" onClick={togglePublished} disabled={!selectedRace || loadingEditor || saving}
+      <button type="button" onClick={togglePublished} disabled={!selectedRace || loadingEditor || saving || pendingSaves > 0}
         className="rounded-lg border px-4 py-2 text-sm font-bold disabled:opacity-50"
         style={{ borderColor: selectedRace?.published ? "#16a34a" : "var(--border)" }}>
-        {selectedRace?.published ? `Published revision ${selectedRace.published_revision} · Hide Results` : `Draft revision ${selectedRace?.working_revision ?? 0} · Publish Results`}
+        {selectedRace?.published ? (selectedRace.live_results ? "Remove Official Status" : "Hide Official Results") : "Mark Results Official"}
       </button>
     </div>
 
-    <div className="flex items-center justify-between flex-wrap gap-2 text-sm">
-      <p role="status" style={{ color: autoSaveStatus.includes("Error") || autoSaveStatus.includes("failed") ? "#dc2626" : "var(--primary)" }}>
-        {autoSaveStatus ? `⚡ ${autoSaveStatus}` : dirty ? "Changes entered. Click off or press Tab to auto-save to live site." : "All changes saved live."}
-      </p>
-      {savingRowId && (
-        <span className="text-xs text-amber-600 font-semibold animate-pulse">
-          Saving pass live...
-        </span>
-      )}
-    </div>
+    <p role="status" className="text-sm" style={{ color: "var(--muted-fg)" }}>
+      {pendingSaves ? "Saving live results…" : hasUnsavedChanges ? "Unsaved changes" : autoSaveStatus}
+    </p>
     {message && <p role={message.error ? "alert" : "status"} className="rounded-lg border p-3 text-sm"
       style={{ borderColor: message.error ? "#dc2626" : "#16a34a" }}>{message.text}</p>}
 
@@ -432,7 +420,7 @@ export default function AdminResultsPage() {
         This race has no classes. <Link href="/admin/races" className="font-bold underline" style={{ color: "var(--primary)" }}>Add active classes in Race Nights</Link>.
       </div> : <div className="space-y-5">
         <p className="text-sm" style={{ color: "var(--muted-fg)" }}>
-          Each class starts with 20 editable rows. Use +5 to make room for more drivers. Passes auto-save to the live site as soon as you click off or press Tab. Click column headers (#, 1st Pass, 2nd Pass, Best Pass, Consistency) to sort locally.
+          Each class starts with 20 editable rows. Use +5 to make room for more drivers. Names and passes appear in public results when you press Enter, Tab, or click away. Click column headers (#, 1st Pass, 2nd Pass, Best Pass, Consistency) to sort locally.
         </p>
         <fieldset disabled={saving} className="space-y-5">
           {classes.map((cls, classIndex) => {
@@ -535,7 +523,13 @@ export default function AdminResultsPage() {
                             if (nextFocused?.closest("tr")?.dataset.rowId !== row.id) {
                               setEditingRow(null);
                             }
-                            void handleBlurRow(cls.id, row.id);
+                            saveField(cls.id, row, field, event.currentTarget.value);
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter" && !event.nativeEvent.isComposing) {
+                              event.preventDefault();
+                              event.currentTarget.blur();
+                            }
                           }}
                           aria-label={`${cls.name} row ${row.order_num ?? rowIndex + 1} ${field === "name" ? "racer" : field === "first_half" ? "first pass" : "second pass"}`}
                           placeholder={field === "name" ? "Name" : "Time, ft, or DQ"}
@@ -547,7 +541,7 @@ export default function AdminResultsPage() {
                           onChange={(event) => {
                             const val = event.target.value;
                             changeRow(cls.id, row.id, "racer_id", val);
-                            void handleBlurRow(cls.id, row.id, val);
+                            saveField(cls.id, row, "racer_id", val);
                           }}
                           onBlur={(event) => {
                             const nextFocused = event.relatedTarget as HTMLElement | null;
@@ -570,7 +564,7 @@ export default function AdminResultsPage() {
             </section>;
           })}
         </fieldset>
-        <button type="button" onClick={saveAll} disabled={!hasPendingChanges || saving} className="rounded-lg px-5 py-3 font-bold disabled:opacity-50 inline-flex items-center gap-2"
+        <button type="button" onClick={saveAll} disabled={!hasPendingChanges || saving || pendingSaves > 0} className="rounded-lg px-5 py-3 font-bold disabled:opacity-50 inline-flex items-center gap-2"
           style={{ background: "var(--primary)", color: "var(--primary-fg)" }}>
           <Trophy className="w-4 h-4" /> {saving ? "Saving..." : "Save All Race Results"}
         </button>

@@ -388,7 +388,7 @@ export default function AdminRacesPage() {
                         <span>•</span>
                         <span>Schedule: {race.show_on_schedule ? "✅ Visible" : "❌ Hidden"}</span>
                         <span>•</span>
-                        <span>Results: {race.published ? "🟢 Published" : "⚪ Draft"}</span>
+                        <span>Results: {race.published ? "🟢 Official" : race.live_results ? "🟢 Live" : "⚪ Awaiting entries"}</span>
                         {race.pdf_url && (
                           <>
                             <span>•</span>

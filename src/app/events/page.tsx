@@ -247,6 +247,13 @@ export default function EventsPage() {
                         </div>
                       </div>
 
+                      {(race.published || race.live_results) && (
+                        <Link href={`/race-results/${race.slug || race.id}`}
+                          className="inline-flex items-center gap-1.5 mt-4 text-sm font-bold text-amber-600 hover:underline">
+                          {race.published ? "View results" : "View live results"}
+                        </Link>
+                      )}
+
                       {race.pdf_url && (
                         <div className="mt-4 pt-3 border-t flex items-center gap-2" style={{ borderColor: "var(--border)" }}>
                           <a
@@ -308,7 +315,7 @@ export default function EventsPage() {
                       <p className="text-xs mt-1" style={{ color: "var(--muted-fg)" }}>
                         {race.event_status === "completed" ? "Race completed at Little Doo Mud Bog." : `Event status: ${race.event_status}.`}
                       </p>
-                      {race.published && <Link href={`/race-results/${race.slug || race.id}`}
+                      {(race.published || race.live_results) && <Link href={`/race-results/${race.slug || race.id}`}
                         className="inline-flex mt-3 text-sm font-bold hover:underline" style={{ color: "var(--primary)" }}>
                         See Results
                       </Link>}

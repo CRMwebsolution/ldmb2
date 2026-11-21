@@ -4,83 +4,21 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowDown, ArrowLeft, ArrowUp, ArrowUpDown, Maximize2, Radio } from "lucide-react";
-import { supabase } from "@/lib/supabase/client";
-import type { Race, RaceClass, RaceResult } from "@/lib/supabase/types";
+import { usePublicRaceResults } from "@/lib/use-public-race-results";
 import {
   formatPass,
   formatRaceDate,
-  isBlankResult,
-  sortClassResults,
   sortResultsByColumn,
   toggleResultSort,
   type ResultSortColumn,
   type ResultSortState,
 } from "@/lib/race-results";
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-type PitClass = RaceClass & { results: RaceResult[] };
-
 export default function PitDisplayPage() {
   const { raceId } = useParams<{ raceId: string }>();
-  const [race, setRace] = useState<Race | null>(null);
-  const [classes, setClasses] = useState<PitClass[]>([]);
+  const { race, classes, error } = usePublicRaceResults(raceId);
   const [selected, setSelected] = useState(0);
   const [classSorts, setClassSorts] = useState<Record<string, ResultSortState>>({});
-  const [revision, setRevision] = useState(0);
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    let active = true;
-    async function load() {
-      try {
-        const selector = UUID.test(raceId) ? "id" : "slug";
-        const { data: event, error: raceError } = await supabase.from("races")
-          .select("*").eq(selector, raceId).eq("published", true).maybeSingle();
-        if (raceError) throw raceError;
-        if (!event) { if (active) setError("Published race not found."); return; }
-        const { data: raceClasses, error: classError } = await supabase.from("classes")
-          .select("*").eq("race_id", event.id).order("order_num");
-        if (classError) throw classError;
-        const ids = (raceClasses || []).map((item) => item.id);
-        const rows: RaceResult[] = [];
-        for (let start = 0; ids.length; start += 1000) {
-          const { data, error: resultError } = await supabase.from("results").select("*")
-            .in("class_id", ids).range(start, start + 999);
-          if (resultError) throw resultError;
-          rows.push(...(data || []));
-          if (!data || data.length < 1000) break;
-        }
-        if (!active) return;
-        setRace(event);
-        setClasses((raceClasses || []).map((item) => {
-          const populated = rows
-            .filter((row) => row.class_id === item.id && !isBlankResult(row))
-            .sort((a, b) => (a.order_num ?? Infinity) - (b.order_num ?? Infinity))
-            .map((row, index) => ({ ...row, order_num: row.order_num ?? index + 1 }));
-          return {
-            ...item,
-            results: sortClassResults(populated, item.display_mode),
-          };
-        }));
-        setError("");
-      } catch {
-        if (active) setError("Live results are temporarily unavailable.");
-      }
-    }
-    void load();
-    return () => { active = false; };
-  }, [raceId, revision]);
-
-  useEffect(() => {
-    if (!race?.id) return;
-    const refresh = () => setRevision((value) => value + 1);
-    const channel = supabase.channel(`pit-${race.id}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "races", filter: `id=eq.${race.id}` }, refresh)
-      .on("postgres_changes", { event: "*", schema: "public", table: "classes", filter: `race_id=eq.${race.id}` }, refresh)
-      .on("postgres_changes", { event: "*", schema: "public", table: "results" }, refresh)
-      .subscribe();
-    return () => { void supabase.removeChannel(channel); };
-  }, [race?.id]);
 
   useEffect(() => {
     if (classes.length < 2) return;
@@ -127,7 +65,7 @@ export default function PitDisplayPage() {
       <button type="button" onClick={() => document.documentElement.requestFullscreen?.()} className="rounded-xl border border-white/20 px-4 py-3 font-bold inline-flex gap-2 items-center"><Maximize2 className="w-5 h-5" /> Full screen</button>
     </header>
 
-    {error ? <p className="mt-10 text-xl text-red-300">{error}</p> : !current ? <p className="mt-10 text-xl text-slate-300">Waiting for published results…</p> : <>
+    {error ? <p className="mt-10 text-xl text-red-300">{error}</p> : !current ? <p className="mt-10 text-xl text-slate-300">Waiting for live results…</p> : <>
       <nav className="flex gap-2 overflow-x-auto py-4" aria-label="Race classes">
         {classes.map((item, index) => <button key={item.id} type="button" onClick={() => setSelected(index)}
           className={`shrink-0 rounded-full px-4 py-2 font-bold ${selected === index ? "bg-amber-500 text-slate-950" : "bg-white/10 text-white"}`}>{item.name}</button>)}
@@ -137,7 +75,7 @@ export default function PitDisplayPage() {
           <h2 className="text-2xl sm:text-4xl font-black">{current.name}</h2>
           <span className="text-slate-400 text-sm">Updates live · rotates every 15 sec</span>
         </div>
-        {rows.length === 0 ? <p className="p-8 text-xl text-slate-300">No passes entered yet.</p> :
+        {rows.length === 0 ? <p className="p-8 text-xl text-slate-300">No entries recorded in this class.</p> :
           <div className="overflow-x-auto"><table className="w-full min-w-[720px] text-lg sm:text-2xl">
             <thead className="text-left text-xs sm:text-sm uppercase tracking-wider text-slate-400"><tr>
               <th className="p-4 w-20" aria-sort={activeSort.column === "order" ? (activeSort.direction === "asc" ? "ascending" : "descending") : "none"}>

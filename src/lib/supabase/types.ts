@@ -101,6 +101,7 @@ export type Database = {
           name: string;
           pdf_url: string | null;
           published: boolean | null;
+          live_results: boolean;
           show_on_schedule: boolean;
           slug: string | null;
           special_label: string | null;
@@ -115,6 +116,7 @@ export type Database = {
           name: string;
           pdf_url?: string | null;
           published?: boolean | null;
+          live_results?: boolean;
           show_on_schedule?: boolean;
           slug?: string | null;
           special_label?: string | null;
@@ -129,6 +131,7 @@ export type Database = {
           name?: string;
           pdf_url?: string | null;
           published?: boolean | null;
+          live_results?: boolean;
           show_on_schedule?: boolean;
           slug?: string | null;
           special_label?: string | null;
@@ -303,6 +306,13 @@ export type Database = {
           p_results: Json; p_delete_ids?: string[];
         };
         Returns: { working_revision: number; published_revision: number }[];
+      };
+      save_race_result: {
+        Args: { p_race_id: string; p_result: Json; p_expected_updated_at: string | null };
+        Returns: {
+          working_revision: number; published_revision: number; live_results: boolean;
+          published: boolean; updated_at: string | null; order_num: number | null;
+        }[];
       };
       set_race_publication: {
         Args: { p_race_id: string; p_expected_revision: number; p_published: boolean };

@@ -391,3 +391,14 @@
 
 - Pre-merge verification passed: `npm test` (20/20 unit tests passed) and `npm run build` (Next.js 16.3.6 production build and TypeScript check passed across all 27 routes).
 - Pushing `main` triggers the connected Vercel production deployment for `ldmb`.
+
+## 2026-11-20 — Codex
+
+- Log Passes & Results now saves the edited name or pass on Enter, Tab, or blur. The
+  single-entry save serializes with registration and bulk edits, detects stale entries,
+  and recalculates the scoring values from the saved passes.
+- The first saved entry opens public live results. The archive, race page, and pit display
+  react to saves while open. Marking results official controls class records and the official PDF.
+- Added the `live_race_results` migration and backfilled upcoming public races with existing entries.
+- Verified the production build, 20 unit tests, and the database migration against isolated
+  PostgreSQL fixtures.
