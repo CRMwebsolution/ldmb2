@@ -402,3 +402,6 @@
 - Added the `live_race_results` migration and backfilled upcoming public races with existing entries.
 - Verified the production build, 20 unit tests, and the database migration against isolated
   PostgreSQL fixtures.
+- Production applied migration `20261121035626`. Verified anonymous access to the November
+  registration and its Realtime activation. A local UI integration test verified Enter and
+  blur through the editor and open spectator component.
