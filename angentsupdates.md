@@ -417,3 +417,8 @@
   registration screen checks for duplicate new registrations and duplicate running orders.
 - Verified all 21 unit tests, TypeScript, the racer link and registration flows in
   isolated PostgreSQL, and the production migration's registration and access checks.
+
+## 2026-11-22 - Codex (Linked Racers ranking)
+
+- Ranked Linked Racers by total distinct race dates across all years, highest first.
+  Racers with the same total sort alphabetically. Each card shows its total event count.

@@ -117,6 +117,17 @@ export default function RacerHistoryPage() {
     return groups;
   }, [allLinkedEntries]);
 
+  const rankedLinkedRacers = useMemo(() => {
+    return identities.map((racer) => {
+      const entries = linkedEntriesByRacer.get(racer.id) ?? [];
+      const eventCounts = countRaceDatesByYear(entries);
+      const totalEvents = eventCounts.reduce((total, { count }) => total + count, 0);
+      return { racer, entryCount: entries.length, eventCounts, totalEvents };
+    }).sort((a, b) =>
+      b.totalEvents - a.totalEvents || a.racer.display_name.localeCompare(b.racer.display_name)
+    );
+  }, [identities, linkedEntriesByRacer]);
+
   async function load() {
     setLoading(true);
     try {
@@ -394,13 +405,13 @@ export default function RacerHistoryPage() {
 
       {loading ? <p>Loading…</p> : identities.length === 0 ? <p className="text-sm">No linked racer identities yet.</p> :
         <div className="grid gap-3 sm:grid-cols-2">
-          {identities.map((racer) => {
-            const entries = linkedEntriesByRacer.get(racer.id) ?? [];
-            const eventCounts = countRaceDatesByYear(entries);
-            return <article key={racer.id} className="rounded-xl border p-4 space-y-3" style={{ borderColor: "var(--border)" }}>
+          {rankedLinkedRacers.map(({ racer, entryCount, eventCounts, totalEvents }) => (
+            <article key={racer.id} className="rounded-xl border p-4 space-y-3" style={{ borderColor: "var(--border)" }}>
               <div>
                 <p className="font-bold">{racer.display_name}</p>
-                <p className="text-xs" style={{ color: "var(--muted-fg)" }}>{entries.length} linked result {entries.length === 1 ? "entry" : "entries"}</p>
+                <p className="text-xs" style={{ color: "var(--muted-fg)" }}>
+                  {totalEvents} {totalEvents === 1 ? "event" : "events"} total · {entryCount} linked result {entryCount === 1 ? "entry" : "entries"}
+                </p>
               </div>
               <div className="text-sm">
                 <p className="font-semibold">Events by year</p>
@@ -435,8 +446,8 @@ export default function RacerHistoryPage() {
                   <Trash2 className="w-4 h-4" /> Delete identity
                 </button>
               </div>
-            </article>;
-          })}
+            </article>
+          ))}
         </div>}
     </section>}
 
