@@ -15,7 +15,7 @@ function friendlyError(error: DbError) {
   if (error.code === "23505" && message.includes("results_class_racer_unique")) {
     return "That verified racer is already registered in this class.";
   }
-  if (error.code === "23505") {
+  if (error.code === "23505" && message.includes("results_class_order_unique")) {
     return "That running-order number is already in use for this class.";
   }
   return message;

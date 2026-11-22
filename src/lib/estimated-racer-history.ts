@@ -379,6 +379,21 @@ function getRaceYear(value: string): number | null {
   return Number.isNaN(date.getTime()) ? null : date.getUTCFullYear();
 }
 
+export function countRaceDatesByYear(
+  entries: HistoryResultEntry[]
+): { year: number; count: number }[] {
+  const dates = new Set(entries.map((entry) => entry.date));
+  const counts = new Map<number, number>();
+
+  for (const date of dates) {
+    const year = getRaceYear(date);
+    if (year !== null) counts.set(year, (counts.get(year) ?? 0) + 1);
+  }
+
+  return Array.from(counts, ([year, count]) => ({ year, count }))
+    .sort((a, b) => b.year - a.year);
+}
+
 export function getRacerLeaderboardYears(racers: EstimatedRacerSummary[]): number[] {
   const years = new Set<number>();
 
@@ -452,8 +467,7 @@ export async function fetchHistoryRows(
           )
         )
       `)
-      .not("name", "is", null)
-      .neq("name", "")
+      .or("racer_id.not.is.null,name.not.is.null")
       .order("id", { ascending: true })
       .range(from, from + pageSize - 1);
 

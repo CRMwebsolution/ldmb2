@@ -7,6 +7,7 @@ import type { Racer } from "@/lib/supabase/types";
 import {
   buildHistoryResultEntries,
   buildUnlinkedRacerLeaderboard,
+  countRaceDatesByYear,
   fetchHistoryRows,
   filterRacerLeaderboardByYear,
   formatRaceDate,
@@ -32,8 +33,8 @@ function resultEntries(summary: EstimatedRacerSummary): HistoryResultEntry[] {
 }
 
 function messageForError(error: { code?: string; message: string }): string {
-  if (error.code === "23505") {
-    return "That identity already exists, or the selected entries would put the same racer in one class twice.";
+  if (error.code === "23505" && error.message.includes("racers_normalized_name_key")) {
+    return "A racer with that name already exists in Linked Racers.";
   }
   if (error.code === "23503") {
     return "One of those entries is already linked to another racer. Reload and review the selections.";
@@ -293,7 +294,7 @@ export default function RacerHistoryPage() {
       </p>
     </header>
 
-    {message && <p role="status" className="rounded-lg border p-3 text-sm" style={{ borderColor: "var(--border)" }}>{message}</p>}
+    {message && !candidateReview && !editingRacer && <p role="status" className="rounded-lg border p-3 text-sm" style={{ borderColor: "var(--border)" }}>{message}</p>}
 
     <div role="tablist" aria-label="Racer history sections" className="grid grid-cols-2 gap-2 rounded-xl border p-1" style={{ background: "var(--surface)", borderColor: "var(--border)" }}>
       <button
@@ -394,11 +395,27 @@ export default function RacerHistoryPage() {
       {loading ? <p>Loading…</p> : identities.length === 0 ? <p className="text-sm">No linked racer identities yet.</p> :
         <div className="grid gap-3 sm:grid-cols-2">
           {identities.map((racer) => {
-            const count = (linkedEntriesByRacer.get(racer.id) ?? []).length;
+            const entries = linkedEntriesByRacer.get(racer.id) ?? [];
+            const eventCounts = countRaceDatesByYear(entries);
             return <article key={racer.id} className="rounded-xl border p-4 space-y-3" style={{ borderColor: "var(--border)" }}>
               <div>
                 <p className="font-bold">{racer.display_name}</p>
-                <p className="text-xs" style={{ color: "var(--muted-fg)" }}>{count} linked result {count === 1 ? "entry" : "entries"}</p>
+                <p className="text-xs" style={{ color: "var(--muted-fg)" }}>{entries.length} linked result {entries.length === 1 ? "entry" : "entries"}</p>
+              </div>
+              <div className="text-sm">
+                <p className="font-semibold">Events by year</p>
+                {eventCounts.length === 0 ? (
+                  <p style={{ color: "var(--muted-fg)" }}>No linked event dates yet.</p>
+                ) : (
+                  <dl className="mt-1 space-y-1">
+                    {eventCounts.map(({ year, count }) => (
+                      <div key={year} className="flex justify-between gap-3" style={{ color: "var(--muted-fg)" }}>
+                        <dt>{year}</dt>
+                        <dd>{count} {count === 1 ? "event" : "events"}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                )}
               </div>
               <div className="flex flex-wrap gap-2">
                 <button
@@ -474,6 +491,8 @@ export default function RacerHistoryPage() {
           />
         </label>}
 
+        {message && <p role="alert" className="rounded-lg border p-3 text-sm" style={{ borderColor: "var(--border)" }}>{message}</p>}
+
         <div className="flex flex-wrap justify-end gap-2">
           <button type="button" onClick={() => setCandidateReview(null)} disabled={busy} className="rounded-lg border px-4 py-2 font-bold" style={{ borderColor: "var(--border)" }}>Cancel</button>
           <button
@@ -534,6 +553,8 @@ export default function RacerHistoryPage() {
         <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
           Saving can unlink unchecked entries, but it cannot delete result rows, pass times, classes, or scoring data.
         </div>
+
+        {message && <p role="alert" className="rounded-lg border p-3 text-sm" style={{ borderColor: "var(--border)" }}>{message}</p>}
 
         <div className="flex flex-wrap justify-end gap-2">
           <button type="button" onClick={() => setEditingRacer(null)} disabled={busy} className="rounded-lg border px-4 py-2 font-bold" style={{ borderColor: "var(--border)" }}>Cancel</button>

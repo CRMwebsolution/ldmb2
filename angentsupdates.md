@@ -405,3 +405,15 @@
 - Production applied migration `20261121035626`. Verified anonymous access to the November
   registration and its Realtime activation. A local UI integration test verified Enter and
   blur through the editor and open spectator component.
+
+## 2026-11-22 - Codex
+
+- Fixed the 409 when linking multiple historical entries for the same driver in a
+  single class. The linked racer review can save every selected result and preserves
+  each row's recorded name, passes, and running order.
+- Added yearly event counts to Linked Racers. Each calendar date counts once for a
+  driver, including dates with multiple classes or multiple race records.
+- Applied Supabase migration `20261122193157_allow_historical_racer_links`. The
+  registration screen checks for duplicate new registrations and duplicate running orders.
+- Verified all 21 unit tests, TypeScript, the racer link and registration flows in
+  isolated PostgreSQL, and the production migration's registration and access checks.
